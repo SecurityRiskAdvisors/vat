@@ -33,6 +33,7 @@ var RootCmd = &cobra.Command{
 func Execute() {
 	// Add global flags
 	RootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable debug mode")
+	slog.Info("vat started", "version", version)
 
 	// Add subcommands
 	RootCmd.AddCommand(saveCmd)     // From saver.go
