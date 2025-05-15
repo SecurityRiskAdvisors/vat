@@ -32,7 +32,7 @@ var saveCmd = &cobra.Command{
 	Short: "Save an assessment from the VECTR instance",
 	Run: func(cmd *cobra.Command, args []string) {
 		// Set up a context with signal handling
-		ctx, cancel := context.WithCancel(context.WithValue(context.Background(), "version", version))
+		ctx, cancel := context.WithCancel(context.WithValue(context.Background(), vat.VERSION, vat.VersionNumber(version)))
 		defer cancel()
 
 		// Handle Ctrl-C (SIGINT) and other termination signals

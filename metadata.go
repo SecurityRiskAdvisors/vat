@@ -39,8 +39,8 @@ func (v *VatMetadata) Serialize() map[string]string {
 
 func NewVatOpMetadata(ctx context.Context) *VatOpMetadata {
 	var version string = "none_found"
-	if ctx.Value("version") != nil {
-		version = ctx.Value("version").(string)
+	if ctx.Value(VERSION) != nil {
+		version = string(ctx.Value(VERSION).(VersionNumber))
 	}
 	return &VatOpMetadata{
 		Version: version,

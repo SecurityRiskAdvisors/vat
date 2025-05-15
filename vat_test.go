@@ -164,3 +164,18 @@ func TestParseLibraryTestcasesByIdsError(t *testing.T) {
 		}
 	})
 }
+
+func TestNewVatMetadata(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		version_string := rapid.String().Draw(t, "version")
+
+		ctx := context.WithValue(context.Background(), vat.VERSION, vat.VersionNumber(version_string))
+
+		md := vat.NewVatOpMetadata(ctx)
+
+		if md.Version != version_string {
+			t.Errorf("version string did not round trip, want: %s, got: %s", version_string, md.Version)
+		}
+	})
+
+}

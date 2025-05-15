@@ -5,6 +5,11 @@ import (
 	"encoding/json"
 )
 
+type VersionKey string
+type VersionNumber string
+
+const VERSION VersionKey = "VERSION"
+
 //go:embed LICENSE
 var License string
 
