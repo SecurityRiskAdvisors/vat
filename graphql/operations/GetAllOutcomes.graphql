@@ -1,0 +1,17 @@
+query GetAllOutcomes {
+  outcomes {
+    id
+    name
+    path
+    abbreviation
+    reportText
+    reportTextColor
+    coverageScore
+    defenseSuccessScore
+    systemFlag
+    userSelectable
+    requiresBlueTool
+    createTime
+    updateTime
+  }
+}

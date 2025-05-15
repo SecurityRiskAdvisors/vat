@@ -1,0 +1,14 @@
+query GetAllTags {
+  tags(filter: {}, orderBy: { direction: ASC, field: NAME }) {
+    nodes {
+      id
+      name
+      sys
+      tagTypeId
+      tagColor
+      offset
+      createTime
+      updateTime
+    }
+  }
+}

@@ -1,0 +1,9 @@
+query GetOrganization($orgName: String) {
+  organizations(filter: {
+    name: {eq: $orgName}
+  }, first: 1, orderBy: {direction: ASC, field: NAME}) {
+    nodes {
+      id
+    }
+  }
+}

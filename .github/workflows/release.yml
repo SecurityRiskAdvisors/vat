@@ -1,0 +1,37 @@
+name: Release Workflow
+
+on:
+  push:
+    branches:
+      - release/**
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-tags: true
+
+    - name: Install GitHub CLI
+      run: sudo apt-get install -y gh
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod' 
+
+    - name: Run release
+      run: make release
+
+    - name: Create Draft Release
+      run: make create-draft-release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Files
+      run: make add-files
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

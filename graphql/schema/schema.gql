@@ -1,0 +1,2750 @@
+directive @fetch(from: String!) on FIELD_DEFINITION
+
+"""
+Indicates an Input Object is a OneOf Input Object.
+"""
+directive @oneOf on INPUT_OBJECT
+
+enum ActivityLogged {
+  TBD
+  Yes
+  No
+}
+
+input AddAttackLogToTestCaseInput {
+  testCaseId: String!
+
+  """
+  envTestCaseId
+  """
+  options: AddAttackLogToTestCaseOptions
+
+  """
+  Optional
+  """
+  procedures: [CreateAttackLogProcedureInput!]!
+}
+
+input AddAttackLogToTestCaseOptions {
+  """
+  Defaults to true
+  """
+  useExisting: Boolean
+
+  """
+  Attack Log fileName override
+  """
+  fileNameOverride: String
+}
+
+type AddAttackLogToTestCasePayload {
+  testCase: TestCase
+}
+
+enum AlertSeverity {
+  TBD
+  Info
+  Low
+  Med
+  High
+  Critical
+}
+
+enum AlertTriggered {
+  TBD
+  Yes
+  No
+}
+
+type Assessment {
+  id: String!
+  name: String!
+  description: String
+  organizations: [Organization]
+  campaigns(orderBy: CampaignSortInput): [Campaign]
+  assessmentIds: [String!]
+  metadata: [MetadataKeyValuePair]
+  tags: [Tag]
+  offset: Int
+  killChain: KillChain
+
+  """
+  Default Test Case data version is only relevant to ENV (local) Assessment data, doesn't apply to Library data and will return NULL.
+  For new Assessments, this defaults to a value of 2 which allows recording Test Case Outcomes at a per-tool level.
+  When set to 1 this defaults newly created Test Cases to Legacy mode which records a single outcome for the Test Case and all associated tools
+  """
+  defaultTcDataVer: Int
+
+  """
+  Defense Tools are only relevant to ENV (local) Test Cases, will return NULL for Library Assessments
+  This represents a snapshot of the active Environment's Defense Tools when the Assessment was created
+  An Assessment's associated Defense Tools are used to infer which tools should be shown on a Test Case by default
+  for the purpose of recording Test Outcomes
+  """
+  defenseTools: [BlueTool!]
+  importTime: Float
+  createTime: Float
+  updateTime: Float
+}
+
+type AssessmentConnection {
+  """
+  List of Assessments
+  """
+  nodes: [Assessment]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+input AssessmentFilter {
+  name: StringOperator
+  metadata: MetadataFilter
+  tags: TagFilter
+}
+
+type AssessmentMutations {
+  create(input: CreateAssessmentInput!): CreateAssessmentPayload
+  createTemplate(input: CreateAssessmentTemplateInput!): CreateAssessmentPayload
+  delete(input: DeleteAssessmentInput!): DeleteAssessmentPayload
+  deleteTemplate(
+    input: DeleteAssessmentTemplateInput!
+  ): DeleteAssessmentTemplatePayload
+  update(input: UpdateAssessmentInput!): UpdateAssessmentPayload
+  updateTemplate(input: UpdateAssessmentTemplateInput!): UpdateAssessmentPayload
+}
+
+enum AttackAutomationExecutor {
+  CMD
+  INLINE_POWERSHELL
+  POWERSHELL
+  SH
+  BASH
+}
+
+input AttackAutomationInput {
+  command: String!
+  executor: AttackAutomationExecutor
+  cleanupCommand: String
+  cleanupExecutor: AttackAutomationExecutor
+  attackVariables: [AttackAutomationVariable]
+}
+
+input AttackAutomationVariable {
+  inputName: String!
+  inputValue: String!
+
+  """
+  currently only supports 'path' or 'string'
+  """
+  type: AutomationVarType
+}
+
+type AttackLog {
+  id: String
+  fileName: String
+  targetType: String
+  src: String
+  environmentId: String
+  createTime: Float
+  updateTime: Float
+}
+
+type AttackLogEntry {
+  id: String
+  content: String
+  logLevel: String
+  logType: String
+  logTime: Float
+  envAttackLogProcedureId: String
+  createTime: Float
+  updateTime: Float
+}
+
+type AttackLogProcedure {
+  id: String
+  name: String
+  envAttackLogId: String
+  attackLogEntry: [AttackLogEntry]
+  attackLog: AttackLog
+  procedureStart: Float
+  procedureStop: Float
+  createTime: Float
+  updateTime: Float
+}
+
+type AutomationArgument {
+  argumentKey: String
+  argumentValue: String
+  argumentType: String
+}
+
+enum AutomationVarType {
+  PATH
+  STRING
+}
+
+"""
+Properties by which a connection can be ordered
+"""
+enum BaseSortField {
+  """
+  Order by document id
+  """
+  ID
+
+  """
+  Order by creation time
+  """
+  CREATE_TIME
+
+  """
+  Order alphabetically by name
+  """
+  NAME
+}
+
+"""
+The base/common sorting field that can be used for most connections
+"""
+input BaseSortOrder {
+  """
+  The direction in which to order by the specified field
+  """
+  direction: OrderDirection = ASC
+
+  """
+  The field in which to order by
+  """
+  field: BaseSortField!
+}
+
+type BlueTool {
+  id: String!
+  name: String
+  description: String
+  active: Boolean
+  phases: [Phase] @deprecated(reason: "Field is no longer supported")
+  defensiveLayers: [DefensiveLayer]
+  vendor: Vendor @deprecated(reason: "This field has moved to product.vendor")
+  tags: [Tag] @deprecated(reason: "Field is no longer supported")
+  defenseToolProduct: DefenseToolProduct
+  template: ClDefenseTool
+  createTime: Float
+  updateTime: Float
+}
+
+type BlueToolConnection {
+  """
+  List of Blue Tools
+  """
+  nodes: [BlueTool]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+type Campaign {
+  id: String!
+  name: String!
+  description: String
+  icon: String
+  organizations: [Organization]
+  testCases: [TestCase]
+  metadata: [MetadataKeyValuePair]
+  attackLogProcedures: [AttackLogProcedure]
+  tags: [Tag]
+  offset: Int
+  createTime: Float
+  updateTime: Float
+}
+
+type CampaignConnection {
+  """
+  List of Campaigns
+  """
+  nodes: [Campaign]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+input CampaignFilter {
+  name: StringOperator
+  metadata: MetadataFilter
+  tags: TagFilter
+}
+
+type CampaignMutations {
+  create(input: CreateCampaignInput!): CreateCampaignPayload
+  createTemplate(input: CreateCampaignTemplateInput!): CreateCampaignPayload
+  updateTemplate(input: UpdateCampaignTemplateInput!): UpdateCampaignPayload
+  delete(input: DeleteCampaignInput!): DeleteCampaignPayload
+  deleteTemplate(
+    input: DeleteCampaignTemplateInput!
+  ): DeleteCampaignTemplatePayload
+}
+
+enum CampaignSortField {
+  ID
+  NAME
+  CREATE_TIME
+  UPDATE_TIME
+  SORT_ORDER
+}
+
+input CampaignSortInput {
+  direction: OrderDirection
+  field: CampaignSortField!
+}
+
+type ChangelogAnalystNote {
+  id: String
+  note: String
+
+  """
+  In cases where there's only 1 identifier (ex: Tactic), leftField is considered primary field identifier
+  """
+  leftFieldIdentifierId: String
+  rightFieldIdentifierId: String
+  rlChangelogNotebookId: Int
+  rlChangelogFieldType: ChangelogAnalystNoteType
+}
+
+"""
+"""
+enum ChangelogAnalystNoteType {
+  TEST_CASE
+  TACTIC
+  TECHNIQUE
+}
+
+type ChangelogAnalystNotebook {
+  id: String
+  name: String
+  description: String
+  rightEnvAssessmentId: Int
+  leftEnvAssessmentId: Int
+  notes: [ChangelogAnalystNote]
+}
+
+type ChangelogAnalystNotebookConnection {
+  """
+  List of Notebooks
+  """
+  nodes: [ChangelogAnalystNotebook]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+"""
+"""
+type ChangelogMutations {
+  createNotebook(
+    input: [CreateChangelogNotebookDataInput!]
+  ): CreateChangelogAnalystNotebookPayload
+  updateNotebook(
+    input: [UpdateChangelogNotebookDataInput!]
+  ): UpdateChangelogAnalystNotebookPayload
+  deleteNotebook(
+    input: DeleteChangelogNotebookInput!
+  ): DeleteChangelogNotebookPayload
+  deleteAnalystNote(
+    input: DeleteChangelogAnalystNoteInput!
+  ): DeleteChangelogAnalystNotePayload
+}
+
+type ClDefenseTool {
+  id: String!
+  name: String
+}
+
+input CloneTestCaseTemplateInput {
+  libraryTestCaseId: String!
+
+  """
+  A UUID-formatted **prescribed ID** for the new template being created by this clone action. This optional field is only necessary if you're managing and reusing content across VECTR instances or expect to import and export this template to this instance. Without this, an ID will be created randomly.
+  """
+  newTemplateId: String
+  testCaseTemplateData: [UpdateTestCaseTemplateDataInput!]!
+}
+
+type ConfigMutations {
+  setVectrSSLConfig(input: VectrSSLConfigInput!): VectrSSLConfigPayload
+  deleteUploadedSSLConfig: DeleteUploadedSSLConfigPayload
+}
+
+input CreateAssessmentDataInput {
+  name: String!
+  description: String
+
+  """
+  Defaults to 'Default' shipped with VECTR, then 'MITRE' if ID not specified
+  """
+  killChainId: String
+  metadata: [MetadataKeyValuePairInput!]
+  organizationIds: [String!]
+  dataVer: Int
+}
+
+input CreateAssessmentInput {
+  db: String!
+  assessmentData: [CreateAssessmentDataInput!]!
+}
+
+type CreateAssessmentPayload {
+  assessments: [Assessment]
+}
+
+input CreateAssessmentTemplateDataInput {
+  name: String!
+  description: String
+
+  """
+  Defaults to 'Default' shipped with VECTR, then 'MITRE' if ID not specified
+  """
+  killChainId: String
+  organizationIds: [String!]
+  libraryCampaignIds: [String!]
+  metadata: [MetadataKeyValuePairInput!]
+
+  """
+  This adds "<prefix> - " prior to the name in the UI. When local data is created in a user database, the prefix is removed from the name. Useful for content organization.
+  """
+  templatePrefix: String
+}
+
+input CreateAssessmentTemplateInput {
+  overwrite: Boolean
+  assessmentTemplateData: [CreateAssessmentTemplateDataInput!]!
+}
+
+input CreateAttackLogEntryInput {
+  """
+  Currently supported values: STDOUT / STDERR, defaults to STDOUT
+  """
+  level: String
+  content: String!
+  time: DateTime
+}
+
+input CreateAttackLogProcedureInput {
+  start: DateTime!
+  stop: DateTime!
+
+  """
+  If this is very long, consider using a short description and include command in contents
+  """
+  command: String!
+
+  """
+  KNOWN ISSUE - creating multiple AttackLogEntries per procedure will lead to odd display in UI
+  """
+  attackLogEntries: [CreateAttackLogEntryInput!]!
+}
+
+input CreateCampaignDataInput {
+  name: String!
+  description: String
+  organizationIds: [String!]
+  metadata: [MetadataKeyValuePairInput!]
+}
+
+input CreateCampaignInput {
+  db: String!
+  assessmentId: String!
+  campaignData: [CreateCampaignDataInput!]!
+}
+
+type CreateCampaignPayload {
+  campaigns: [Campaign]
+}
+
+input CreateCampaignTemplateDataInput {
+  name: String!
+  description: String
+  libraryTestCaseIds: [String!]
+  organizationIds: [String!]
+  metadata: [MetadataKeyValuePairInput!]
+
+  """
+  This adds "<prefix> - " prior to the name in the UI. When local data is created in a user database, the prefix is removed from the name. Useful for content organization.
+  """
+  templatePrefix: String
+}
+
+input CreateCampaignTemplateInput {
+  """
+  A flag to specify if the create template operation should fail on Campaign template name collision or overwrite an existing Campaign template with the same template name.
+  """
+  overwrite: Boolean
+  campaignTemplateData: [CreateCampaignTemplateDataInput!]!
+}
+
+input CreateChangelogAnalystNoteInput {
+  note: String!
+  noteType: ChangelogAnalystNoteType!
+  leftFieldIdentifierId: String
+  rightFieldIdentifierId: String
+}
+
+type CreateChangelogAnalystNotebookPayload {
+  notebooks: [ChangelogAnalystNotebook]
+}
+
+input CreateChangelogNotebookDataInput {
+  name: String!
+  description: String!
+  leftEnvAssessmentId: Int!
+  rightEnvAssessmentId: Int!
+  notes: [CreateChangelogAnalystNoteInput!]!
+}
+
+input CreateDefenseToolProductDataInput {
+  name: String!
+  description: String
+  icon: String
+  defenseLayerIds: [String]
+  vendorId: String
+}
+
+input CreateDefenseToolProductInput {
+  defenseToolProducts: [CreateDefenseToolProductDataInput]
+}
+
+type CreateDefenseToolProductPayload {
+  defenseToolProducts: [DefenseToolProduct]
+}
+
+input CreateFavoriteTagInput {
+  tagType: TagTypeEnum!
+  tagIds: [String!]
+}
+
+type CreateFavoriteTagPayload {
+  status: SimpleOperationStatus!
+  message: String!
+}
+
+input CreateSourceDataInput {
+  name: String!
+  platformType: String!
+  description: String
+}
+
+input CreateSourceInput {
+  db: String!
+  sourceDataInputs: [CreateSourceDataInput!]!
+}
+
+type CreateSourcePayload {
+  source: [Source]
+}
+
+input CreateTagInput {
+  name: String!
+  tagType: TagTypeEnum!
+
+  """
+  #000000 to #FFFFFF formatted HTML color code
+  """
+  tagColor: String
+}
+
+type CreateTagPayload {
+  tags: [Tag]
+}
+
+input CreateTargetDataInput {
+  name: String!
+  platformType: String!
+  description: String
+}
+
+input CreateTargetInput {
+  db: String!
+  targetDataInputs: [CreateTargetDataInput!]!
+}
+
+type CreateTargetPayload {
+  target: [Target]
+}
+
+input CreateTestCaseAndTemplateMatchByNameInput {
+  db: String!
+  campaignId: String!
+  createTestCaseInputs: [CreateTestCaseDataWithTemplateNameInput!]!
+}
+
+input CreateTestCaseDataInput {
+  name: String!
+
+  """
+  redTeam.variant
+  """
+  description: String!
+
+  """
+  redTeam.objective
+  """
+  phase: String!
+  technique: String!
+  tags: [String!]
+  organization: String!
+  status: TestCaseStatus
+
+  """
+  campaign: String
+  assessment: String
+  """
+  targets: [String!]
+  sources: [String!]
+
+  """
+  Blue team
+  """
+  defenses: [String!]
+  detectionSteps: [String!]
+  preventionSteps: [String!]
+  outcomePath: String
+  overrideOutcome: Boolean
+  outcomeNotes: String
+  detectionTime: Float
+  detectingDefenseTools: [DefenseToolInput!]
+  defenseToolOutcomes: [DefenseToolOutcomeInput!]
+
+  """
+  Red team
+  """
+  references: [String!]
+  redTools: [RedToolInput!]
+  operatorGuidance: String
+
+  """
+  redTeam.command
+  """
+  attackStart: Float
+  attackStop: Float
+  redTeamMetadata: [MetadataKeyValuePairInput!]
+  blueTeamMetadata: [MetadataKeyValuePairInput!]
+  attackAutomation: AttackAutomationInput
+  dataVer: Int
+}
+
+input CreateTestCaseDataWithLibraryIdInput {
+  libraryTestCaseId: String!
+
+  """
+  Use this field to indicate if VECTR should create a Test Case template with this template ID if one is not found.
+  """
+  createNewIfNotExists: Boolean
+  testCaseData: CreateTestCaseDataInput!
+}
+
+input CreateTestCaseDataWithTemplateNameInput {
+  """
+  DEPRECATED. OPTIONAL - Use this template name vs the Test Case name while looking up a template, or create a Test Case template with this name if one is not found. Note: will be DEPRECATED by templateNameDetail input
+  """
+  templateName: String
+
+  """
+  @deprecated(reason: "templateName is deprecated. Use templateNameDetail instead to support content prefixing. Will be removed in a future release.")
+  OPTIONAL - Use this template name vs the Test Case name while looking up a template. If this is provided, templateName above is ignored.
+  """
+  templateNameDetail: TemplateNamePrefixInput
+  testCaseData: CreateTestCaseDataInput!
+}
+
+input CreateTestCaseMatchByLibraryIdInput {
+  db: String!
+  campaignId: String!
+  createTestCaseInputs: [CreateTestCaseDataWithLibraryIdInput!]!
+}
+
+type CreateTestCasePayload {
+  testCases: [TestCase]
+}
+
+input CreateTestCaseTemplateDataInput {
+  libraryTestCaseId: String
+  name: String!
+
+  """
+  redTeam.variant
+  """
+  description: String!
+
+  """
+  redTeam.objective
+  """
+  phase: String!
+  technique: String!
+  tags: [String]
+  organization: String!
+
+  """
+     campaign: String
+     assessment: String
+  Blue team
+  """
+  defenses: [String]
+  detectionSteps: [String]
+  preventionSteps: [String]
+
+  """
+  Red team
+  """
+  references: [String]
+  redTools: [RedToolInput]
+  operatorGuidance: String
+
+  """
+  redTeam.command
+  """
+  redTeamMetadata: [MetadataKeyValuePairInput!]
+  blueTeamMetadata: [MetadataKeyValuePairInput!]
+  attackAutomation: AttackAutomationInput
+
+  """
+  This adds "<prefix> - " prior to the name in the UI. When local data is created in a user database, the prefix is removed from the name. Useful for content organization.
+  """
+  templatePrefix: String
+}
+
+input CreateTestCaseTemplateInput {
+  """
+  A flag to specify if the create template operation should fail on template ID collision or overwrite an existing Test Case template with the same template ID.
+  """
+  overwrite: Boolean
+  testCaseTemplateData: [CreateTestCaseTemplateDataInput!]!
+}
+
+input CreateTestCaseWithoutTemplateInput {
+  db: String!
+  campaignId: String!
+  testCaseData: [CreateTestCaseDataInput!]!
+}
+
+type Database {
+  id: Int
+  name: String
+}
+
+"""
+ISO 8601 date and time format
+"""
+scalar DateTime
+
+input DefenseToolInput {
+  name: String!
+  vendor: String
+}
+
+type DefenseToolOutcome {
+  defenseToolId: Int!
+  outcomeId: String!
+}
+
+input DefenseToolOutcomeInput {
+  defenseToolId: String!
+  outcomeId: String!
+}
+
+type DefenseToolProduct {
+  id: String!
+  name: String!
+  ref: String!
+  description: String
+  icon: String
+  defensiveLayers: [DefensiveLayer]
+  vendor: Vendor
+  sys: Boolean
+  createTime: Float
+  updateTime: Float
+}
+
+type DefenseToolProductMutations {
+  create(input: CreateDefenseToolProductInput!): CreateDefenseToolProductPayload
+  update(input: UpdateDefenseToolProductInput!): UpdateDefenseToolProductPayload
+  delete(input: DeleteDefenseToolProductInput!): DeleteDefenseToolProductPayload
+}
+
+type DefenseToolProductsConnection {
+  """
+  List of Defense Tool Products
+  """
+  nodes: [DefenseToolProduct]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+type DefensiveLayer {
+  id: String!
+  name: String!
+  icon: String
+  description: String
+  template: DefensiveLayer
+  deprecated: Boolean @deprecated(reason: "This field is no longer used. ")
+  offset: Int
+  createTime: Float
+  updateTime: Float
+}
+
+type DefensiveLayerConnection {
+  """
+  List of Defensive Layers
+  """
+  nodes: [DefensiveLayer]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+input DeleteAssessmentInput {
+  db: String!
+  ids: [String!]!
+}
+
+type DeleteAssessmentPayload {
+  deletedIds: [String!]
+}
+
+input DeleteAssessmentTemplateInput {
+  ids: [String!]!
+}
+
+type DeleteAssessmentTemplatePayload {
+  deletedIds: [String!]
+}
+
+input DeleteCampaignInput {
+  db: String!
+  ids: [String!]!
+}
+
+type DeleteCampaignPayload {
+  deletedIds: [String!]
+}
+
+input DeleteCampaignTemplateInput {
+  ids: [String!]!
+}
+
+type DeleteCampaignTemplatePayload {
+  deletedIds: [String!]
+}
+
+input DeleteChangelogAnalystNoteInput {
+  idsToDelete: [String!]
+}
+
+type DeleteChangelogAnalystNotePayload {
+  deletedIds: [Int]
+}
+
+input DeleteChangelogNotebookInput {
+  idsToDelete: [String!]
+}
+
+type DeleteChangelogNotebookPayload {
+  deletedIds: [Int]
+}
+
+input DeleteDefenseToolProductInput {
+  ids: [String]
+}
+
+type DeleteDefenseToolProductPayload {
+  deletedIds: [String]
+}
+
+input DeleteFavoriteTagInput {
+  tagType: TagTypeEnum!
+  tagIds: [String!]
+}
+
+type DeleteFavoriteTagPayload {
+  status: SimpleOperationStatus!
+  message: String!
+}
+
+input DeleteTestCaseInput {
+  db: String!
+  ids: [String!]!
+}
+
+type DeleteTestCasePayload {
+  deletedIds: [String!]
+}
+
+input DeleteTestCaseTemplateInput {
+  ids: [String!]!
+}
+
+type DeleteTestCaseTemplatePayload {
+  deletedIds: [String!]
+}
+
+input DeleteUnstructuredLogInput {
+  ids: [Int!]!
+}
+
+type DeleteUnstructuredLogPayload {
+  deletedIds: [Int!]
+}
+
+type DeleteUploadedSSLConfigPayload {
+  status: SimpleOperationStatus!
+  message: String
+}
+
+type ExecutionArtifact {
+  id: Int!
+  name: String
+  filename: String!
+  description: String
+  encodeKey: String!
+  nonce: String!
+  fileSize: Int!
+  uuid: String
+  ver: String
+  createTime: Float
+  updateTime: Float
+}
+
+type ExecutionArtifactConnection {
+  """
+  List of Execution Artifacts
+  """
+  nodes: [ExecutionArtifact]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+type ExecutionArtifactIdInfo {
+  id: Int
+  variableName: String
+}
+
+input ExecutionArtifactIdInfoInput {
+  id: Int!
+  variableName: String
+}
+
+"""
+type FavoriteTag {
+    id: String
+    userId: String
+    tagIds: [String!]
+    tagType: TagTypeEnum
+    createTime: Float
+    updateTime: Float
+}
+"""
+type FavoriteTagIds {
+  tagType: TagTypeEnum
+  tagIds: [String!]
+}
+
+type FavoriteTagMutations {
+  create(input: CreateFavoriteTagInput!): CreateFavoriteTagPayload
+  delete(input: DeleteFavoriteTagInput!): DeleteFavoriteTagPayload
+  primeDefaultsForUser(
+    input: PrimeDefaultFavoriteTagsForUserInput!
+  ): PrimeDefaultFavoriteTagsForUserPayload
+}
+
+"""
+enum InsightsAnalystNoteType {
+    TEST_CASE,
+    TACTIC,
+    TECHNIQUE
+}
+type InsightsAnalystNotebook {
+    id: String
+    name: String
+    description: String
+    envAssessmentId:Int
+    insightsIndexId:Int
+    notes:[InsightsAnalystNote]
+}
+
+type InsightsAnalystNote {
+    id:String
+    note:String
+    fieldIdentifierId:String
+    notebookId:Int
+    fieldType:InsightsAnalystNoteType
+}
+
+type InsightsAnalystNotebookConnection{
+    # List of Notebooks
+    nodes: [InsightsAnalystNotebook]
+
+    # Information to aid in pagination
+    pageInfo: PageInfo
+}
+"""
+type InsightsIndex {
+  id: Int
+  name: String
+  shortName: String
+}
+
+type InsightsTrending {
+  index: InsightsIndex!
+  bundles: [InsightsTrendingBundle]
+}
+
+type InsightsTrendingBundle {
+  id: Int!
+  score: Float!
+  periodStart: Float!
+  periodEnd: Float!
+  quartile1: Float!
+  quartile3: Float!
+}
+
+type KillChain {
+  id: String!
+  name: String!
+  description: String
+  phases: [Phase]
+  tags: [Tag] @deprecated(reason: "This field is no longer supported.")
+  offset: Int
+  createTime: Float
+  updateTime: Float
+}
+
+type KillChainConnection {
+  """
+  List of Kill Chains
+  """
+  nodes: [KillChain]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+input MetadataFilter {
+  key: String!
+  value: StringOperator
+}
+
+type MetadataKeyValuePair {
+  key: String
+  value: String
+}
+
+input MetadataKeyValuePairInput {
+  key: String!
+  value: String!
+}
+
+type MetadataSummary {
+  metadataKeys: [MetadataSummaryItem]
+}
+
+input MetadataSummaryFilter {
+  type: MetadataType = ALL
+}
+
+type MetadataSummaryItem {
+  key: String!
+  values: [String!]
+}
+
+enum MetadataType {
+  TEST_CASE
+  CAMPAIGN
+  ASSESSMENT
+  ALL
+}
+
+enum MitreFrameworkType {
+  ENTERPRISE
+  ICS
+  MOBILE
+}
+
+type MitreTactic {
+  id: String!
+  frameworkType: MitreFrameworkType
+  stixId: String
+  externalId: String
+  name: String
+  description: String
+}
+
+type Mutation {
+  testCase: TestCaseMutations
+  assessment: AssessmentMutations
+  campaign: CampaignMutations
+  outcome: OutcomeMutations
+  tag: TagMutations
+  target: TargetMutations
+  source: SourceMutations
+  config: ConfigMutations
+  favoriteTag: FavoriteTagMutations
+  unstructuredLog: UnstructuredLogMutations
+  defenseToolProduct: DefenseToolProductMutations
+  changelogNotebook: ChangelogMutations
+}
+
+input NameFilter {
+  name: StringOperator
+}
+
+"""
+Possible directions in which to order a list of items when provided an `orderBy` argument
+"""
+enum OrderDirection {
+  """
+  Specifies an ascending order for a given `orderBy` argument
+  """
+  ASC
+
+  """
+  Specifies a descending order for a given `orderBy` argument
+  """
+  DESC
+}
+
+type Organization {
+  id: String
+  name: String
+  abbreviation: String
+  description: String
+  url: String
+  offset: Int
+  tags: [Tag] @deprecated(reason: "This field is no longer supported.")
+  createTime: Float
+  updateTime: Float
+}
+
+type OrganizationConnection {
+  """
+  List of Organizations
+  """
+  nodes: [Organization]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+type Outcome {
+  id: String!
+  name: String
+  abbreviation: String
+
+  """
+  Dot delimited path identifying the outcome's position in the Outcome tree structure. (Example: 'Blocked.Blocked_Alerted_No' for 'Blocked_Alerted_No' under the parent Outcome 'Blocked')
+  """
+  path: String
+  createTime: Float
+  updateTime: Float
+  reportText: String
+
+  """
+  Hex Color string like "#F44336"
+  """
+  reportTextColor: String
+  coverageScore: Float
+  defenseSuccessScore: Int
+  systemFlag: Boolean
+  historicalTrendSuccess: Boolean
+  historicalTrendCategory: Boolean
+
+  """
+  UI prompt question for user to consider when selecting child elements. (Example: 'Alerted' may be a top level outcome but a child question of 'Severity?' could be used for child outcomes of 'Low' and 'High')
+  """
+  childQuestion: String
+  userSelectable: Boolean
+  requiresBlueTool: Boolean
+  defaultable: Boolean
+  icon: String
+  parentId: String
+}
+
+type OutcomeMutations {
+  """
+   create(
+      input: CreateOutcomeInput!
+  ): OutcomePayload
+  """
+  update(input: UpdateOutcomeInput!): OutcomePayload
+}
+
+"""
+input CreateOutcomeDataInput {
+    name: String!
+    abbreviation: String
+    reportText : String!
+    # Hex Color string like "#F44336"
+    reportTextColor : String!
+    coverageScore: Float
+    defenseSuccessScore: Int
+    historicalTrendSuccess: Boolean
+    historicalTrendCategory: Boolean
+    # UI prompt question for user to consider when selecting child elements. (Example: 'Alerted' may be a top level outcome but a child question of 'Severity?' could be used for child outcomes of 'Low' and 'High')
+    childQuestion : String
+    userSelectable : Boolean
+    requiresBlueTool: Boolean
+    defaultable: Boolean
+    parentId: String
+    childIds: [String!]
+}
+"""
+type OutcomePayload {
+  outcomes: [Outcome]
+}
+
+type OutcomeTreeNode {
+  node: Outcome
+  nodeIsLeaf: Boolean
+  children: [OutcomeTreeNode]
+}
+
+"""
+Information about pagination in a connection
+"""
+type PageInfo {
+  """
+  When paginating forward, the cursor to continue
+  """
+  endCursor: String
+
+  """
+  When paginating forwards, are there more items?
+  """
+  hasNextPage: Boolean!
+}
+
+type Phase {
+  id: String!
+  name: String!
+  abbreviation: String!
+  description: String
+  offset: Int
+  mitreTactics: [MitreTactic]
+  tags: [Tag] @deprecated(reason: "This field is no longer supported.")
+  createTime: Float
+  updateTime: Float
+}
+
+type PhaseConnection {
+  """
+  List of Phases
+  """
+  nodes: [Phase]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+type PremiumFeature {
+  id: String
+  importantData: String
+  connectedFeatures: [PremiumFeature]
+}
+
+input PrimeDefaultFavoriteTagsForUserInput {
+  userId: String!
+}
+
+type PrimeDefaultFavoriteTagsForUserPayload {
+  status: SimpleOperationStatus!
+  message: String!
+}
+
+type Query {
+  """
+  Query information about an Assessment
+  """
+  assessment(
+    """
+    Database to query against
+    """
+    db: String
+
+    """
+    ID of the Assessment to query
+    """
+    id: String!
+  ): Assessment
+
+  """
+  Query for all Assessments in the given database
+  """
+  assessments(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    A filter to return a subset of data
+    """
+    filter: AssessmentFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): AssessmentConnection
+
+  """
+  Query for Assessments in the given ID list and database
+  """
+  assessmentsByIds(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    The list of Assessment IDs to retrieve
+    """
+    ids: [String]!
+  ): AssessmentConnection
+
+  """
+  Query information about an Assessment
+  """
+  libraryAssessment(
+    """
+    ID of the Assessment to query
+    """
+    id: String!
+  ): Assessment
+
+  """
+  Query for all Library Assessments
+  """
+  libraryAssessments(
+    """
+    A filter to return a subset of data
+    """
+    filter: AssessmentFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): AssessmentConnection
+
+  """
+  Query for Assessments in the given ID list and database
+  """
+  libraryAssessmentsByIds(
+    """
+    The list of Assessment IDs to retrieve
+    """
+    ids: [String]!
+  ): AssessmentConnection
+
+  """
+  Query information about a Campaign
+  """
+  campaign(
+    """
+    Database to query against
+    """
+    db: String!
+
+    """
+    ID of the Campaign to query
+    """
+    id: String!
+  ): Campaign
+
+  """
+  Query for all Campaigns in the given database
+  """
+  campaigns(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    A filter to return a subset of data
+    """
+    filter: CampaignFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): CampaignConnection
+
+  """
+  Query for Campaigns in the given ID list and database
+  """
+  campaignsByIds(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    The list of Campaign IDs to retrieve
+    """
+    ids: [String]!
+  ): CampaignConnection
+  libraryCampaign(id: String!): Campaign
+  libraryCampaigns(
+    filter: CampaignFilter
+    first: Int
+    after: String
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): CampaignConnection
+  libraryCampaignsByIds(ids: [String]!): CampaignConnection
+
+  """
+  Query for Database list
+  """
+  databases: [Database]
+
+  """
+  Query information about a Defensive Layer
+  """
+  defensivelayer(
+    """
+    Database to query against
+    """
+    db: String!
+
+    """
+    ID of the Defensive Layer to query
+    """
+    id: String!
+  ): DefensiveLayer
+
+  """
+  Query for all Defensive Layers in the given database
+  """
+  defensivelayers(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): DefensiveLayerConnection
+
+  """
+  Query for Defensive Layers in the given ID list and database
+  """
+  defensivelayersByIds(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    The list of Defensive Layer IDs to retrieve
+    """
+    ids: [String]!
+  ): DefensiveLayerConnection
+
+  """
+  Query information about a Defensive Layer
+  """
+  libraryDefensivelayer(
+    """
+    ID of the Defensive Layer to query
+    """
+    id: String!
+  ): DefensiveLayer
+
+  """
+  Query for all Defensive Layers in the given database
+  """
+  libraryDefensivelayers(
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): DefensiveLayerConnection
+
+  """
+  Query for Defensive Layers in the given ID list and database
+  """
+  libraryDefensivelayersByIds(
+    """
+    The list of Defensive Layer IDs to retrieve
+    """
+    ids: [String]!
+  ): DefensiveLayerConnection
+
+  """
+  Query for all defense tool products
+  """
+  defenseToolProducts(
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): DefenseToolProductsConnection
+  defenseToolProductsByIds(
+    """
+    The list of Defense Tool Products IDs to retrieve
+    """
+    ids: [String]!
+  ): DefenseToolProductsConnection
+
+  """
+  Query information about a blue / defense tool
+  """
+  bluetool(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    ID of the blue tool to query
+    """
+    id: String!
+  ): BlueTool
+
+  """
+  Query for all blue tools in the given database
+  """
+  bluetools(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): BlueToolConnection
+
+  """
+  Query information about a blue / defense tool
+  """
+  libraryBluetool(
+    """
+    ID of the blue tool to query
+    """
+    id: String!
+  ): BlueTool
+
+  """
+  Query for all blue tools in the Content Library
+  """
+  libraryBluetools(
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): BlueToolConnection
+  executionArtifactsByIds(
+    """
+    The list of Exec Artifact IDs to retrieve
+    """
+    ids: [Int!]!
+  ): ExecutionArtifactConnection
+  myFavoriteTagIds(tagType: TagTypeEnum): FavoriteTagIds
+
+  """
+  Query information about a specific Kill Chain
+  """
+  killchain(
+    """
+    ID of the Kill Chain to query
+    """
+    id: String!
+  ): KillChain
+
+  """
+  Query for all Kill Chains in the given database
+  """
+  killchains(
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): KillChainConnection
+
+  """
+  Query for Kill Chains in the given ID list and database
+  """
+  killchainsByIds(
+    """
+    The list of Kill Chain IDs to retrieve
+    """
+    ids: [String]!
+  ): KillChainConnection
+
+  """
+  """
+  metadataSummary(db: String!, filter: MetadataSummaryFilter): MetadataSummary
+
+  """
+  # Query information about a specific Outcome
+  """
+  outcome(
+    """
+    ID of the Outcome to query
+    """
+    id: String!
+  ): Outcome
+
+  """
+  # Query for a flat collection of all Outcomes
+  """
+  outcomes: [Outcome]
+
+  """
+  # Query for entire Outcome Tree organized as nodes and children elements
+  """
+  outcomesTree: [OutcomeTreeNode]
+
+  """
+  Query information about a specific Organizations
+  """
+  organization(
+    """
+    ID of the Organizations to query
+    """
+    id: String!
+  ): Organization
+
+  """
+  Query for all Organizations
+  """
+  organizations(
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): OrganizationConnection
+
+  """
+  Query information about a specific Phase
+  """
+  phase(
+    """
+    ID of the Phase to query
+    """
+    id: String!
+  ): Phase
+
+  """
+  Query for all Phases in the given database
+  """
+  phases(
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): PhaseConnection
+
+  """
+  Query for Phases in the given ID list and database
+  """
+  phasesByIds(
+    """
+    The list of Phase IDs to retrieve
+    """
+    ids: [String]!
+  ): PhaseConnection
+
+  """
+  # Query information about a red tool
+  """
+  redtool(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    ID of the red tool to query
+    """
+    id: String!
+  ): RedTool
+
+  """
+  Query for all red tools in the given database
+  """
+  redtools(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): RedToolConnection
+
+  """
+  Query for entire Outcome Tree organized as nodes and children elements
+  """
+  reportingBucketsTree: [ReportingBucketTreeNode]
+
+  """
+  Query for information about a red tool in the Content Library
+  """
+  libraryRedtool(
+    """
+    ID of the red tool to query
+    """
+    id: String!
+  ): RedTool
+
+  """
+  Query for all red tools in the Content Library
+  """
+  libraryRedtools(
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): RedToolConnection
+
+  """
+  Query for information about a Tag
+  """
+  tag(
+    """
+    ID of the tag to query
+    """
+    id: String!
+  ): Tag
+
+  """
+  Query for all Tags
+  """
+  tags(
+    """
+    A filter to return a subset of data
+    """
+    filter: TagFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): TagConnection
+  tagTypes: [TagType]
+
+  """
+  Query information about a specific Test Case
+  """
+  testcase(
+    """
+    Database to query against
+    """
+    db: String!
+
+    """
+    ID of the TestCase to query
+    """
+    id: String!
+  ): TestCase
+
+  """
+  Query for all Test Cases in the given database
+  """
+  testcases(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    A filter to return a subset of data
+    """
+    filter: TestCaseFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: TestCaseSortOrder = { direction: ASC, field: NAME }
+  ): TestCaseConnection
+
+  """
+  Query for Test Cases in the given ID list and database
+  """
+  testcasesByIds(
+    """
+    The database to query
+    """
+    db: String!
+
+    """
+    The list of Test Cases IDs to retrieve
+    """
+    ids: [String]!
+  ): TestCaseConnection
+
+  """
+  Query information about a specific Test Case
+  """
+  libraryTestcase(
+    """
+    ID of the TestCase to query
+    """
+    id: String!
+  ): TestCase
+
+  """
+  Query for all Library Test Cases
+  """
+  libraryTestcases(
+    """
+    A filter to return a subset of data
+    """
+    filter: TestCaseFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: TestCaseSortOrder = { direction: ASC, field: NAME }
+  ): TestCaseConnection
+  libraryTestcasesByIds(
+    """
+    The list of Test Cases IDs to retrieve
+    """
+    ids: [String]!
+  ): TestCaseConnection
+  vendor(
+    """
+    ID of the Vendor to query
+    """
+    id: String!
+  ): Vendor
+
+  """
+  Query for all Vendors in the given database
+  """
+  vendors(
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): VendorConnection
+
+  """
+  Query for Vendor information in the given ID list and database
+  """
+  vendorsByIds(
+    """
+    The list of Vendor IDs to retrieve
+    """
+    ids: [String]!
+  ): VendorConnection
+  libraryVendor(
+    """
+    ID of the Vendor to query
+    """
+    id: String!
+  ): Vendor
+  libraryVendors(
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
+  ): VendorConnection
+  libraryVendorsByIds(
+    """
+    The list of Vendor IDs to retrieve
+    """
+    ids: [String]!
+  ): VendorConnection
+  unstructuredLogsByIds(
+    """
+    List of Unstructured Log IDs to retrieve
+    """
+    ids: [String!]!
+  ): UnstructuredLogConnection
+  vectrAppConfig: VectrAppConfig
+  vectrUploadedSSLConfig: UploadedVectrSSLConfig
+  vectrSSLConfig: VectrSSLConfig
+  premiumFeature(db: String, id: String!): PremiumFeature
+
+  """
+  Query for all Organizations
+  """
+  changelogAnalystNotebooks: ChangelogAnalystNotebookConnection
+
+  """
+  Query information about notes for 2 assessments
+  """
+  changelogAnalystNotebookByAssessmentIds(
+    """
+    ID of the Assessment to query
+    """
+    envAssessmentId1: String!
+    envAssessmentId2: String!
+  ): ChangelogAnalystNotebookConnection
+  changelogAnalystNotebookByNotebookId(
+    """
+    ID of the Assessment to query
+    """
+    changelogNotebookId: String!
+  ): ChangelogAnalystNotebookConnection
+
+  """
+  Query for all Organizations
+  insightsAnalystNotebooks: InsightsAnalystNotebookConnection
+  Query information about notes for 2 assessments
+     insightsAnalystNotebookByAssessmentIds(
+         # ID of the Assessment to query
+         envAssessmentId: String!
+         insightsIndexId:String!
+     ): InsightsAnalystNotebookConnection
+
+     insightsAnalystNotebookByNotebookId(
+         # ID of the Assessment to query
+         notebookId: String!
+     ): InsightsAnalystNotebookConnection
+  """
+  insightsIndexes: [InsightsIndex]
+  insightsTrending(indexIds: [Int!]!): [InsightsTrending]
+}
+
+type RedTool {
+  id: String!
+  name: String
+  description: String
+  active: Boolean
+  toolVersion: String
+  phases: [Phase] @deprecated(reason: "Field is no longer supported")
+  vendor: Vendor
+  tags: [Tag] @deprecated(reason: "Field is no longer supported")
+  createTime: Float
+  updateTime: Float
+}
+
+type RedToolConnection {
+  """
+  List of Red Tools
+  """
+  nodes: [RedTool]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+input RedToolInput {
+  name: String!
+  vendor: String
+}
+
+type ReportingBucket {
+  id: String!
+  name: String
+  offset: Int
+  systemFlag: Boolean
+  reportTextColor: String
+  abbreviation: String
+  reportText: String
+  createTime: Float
+  updateTime: Float
+}
+
+type ReportingBucketTreeNode {
+  node: ReportingBucket
+  children: [OutcomeTreeNode]
+}
+
+enum SimpleOperationStatus {
+  SUCCESS
+  ERROR
+}
+
+type Source {
+  id: String!
+  name: String
+  phases: [Phase] @deprecated(reason: "This field is no longer supported.")
+  tags: [Tag] @deprecated(reason: "This field is no longer supported.")
+  createTime: Float
+  updateTime: Float
+}
+
+type SourceMutations {
+  create(input: CreateSourceInput!): CreateSourcePayload
+}
+
+input StringOperator {
+  eq: String
+  contains: String
+}
+
+type Tag {
+  id: String!
+  name: String
+  sys: Boolean
+  tagTypeId: String
+  tagColor: String
+  offset: Int
+  createTime: Float
+  updateTime: Float
+}
+
+type TagConnection {
+  """
+  List of Test Cases
+  """
+  nodes: [Tag]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+input TagFilter {
+  name: StringOperator
+}
+
+type TagMutations {
+  create(input: CreateTagInput!): CreateTagPayload
+}
+
+type TagType {
+  id: String!
+  name: String
+  ref: String
+  createTime: Float
+  updateTime: Float
+}
+
+enum TagTypeEnum {
+  TEST_CASE
+  CAMPAIGN
+  ASSESSMENT
+  GENERIC_RULE
+  ANALYSIS_ENGINE_RULE
+  DATA_SOURCE
+  DETECTION_RULE
+}
+
+type Target {
+  id: String!
+  name: String
+  phases: [Phase] @deprecated(reason: "This field is no longer supported.")
+  tags: [Tag] @deprecated(reason: "This field is no longer supported.")
+  description: String
+  createTime: Float
+  updateTime: Float
+}
+
+type TargetMutations {
+  create(input: CreateTargetInput!): CreateTargetPayload
+}
+
+input TemplateNamePrefixInput {
+  templateName: String!
+  templatePrefix: String
+}
+
+type TestCase {
+  id: String!
+  name: String
+  description: String
+  method: String
+  templateId: String
+    @deprecated(
+      reason: "This field is deprecated and has been superseded by 'libraryTestCaseId'. "
+    )
+  libraryTestCaseId: String
+  mitreId: String
+  deprecated: Boolean
+  organizations: [Organization!]
+  defensiveLayers: [DefensiveLayer]
+  outcomeNotes: String
+  activityLogged: String @deprecated(reason: "Field is no longer supported")
+  alertSeverity: String @deprecated(reason: "Field is no longer supported")
+  outcomes: [String] @deprecated(reason: "Field is no longer supported")
+  outcome: Outcome
+  overrideOutcome: Boolean
+  operatorGuidance: String
+  redTools: [RedTool]
+  blueTools: [BlueTool]
+  metadata: [MetadataKeyValuePair]
+  redTeamMetadata: [MetadataKeyValuePair]
+    @deprecated(
+      reason: "This field is deprecated and has been superseded by 'metadata'. Metadata is now associated at the test case level."
+    )
+  blueTeamMetadata: [MetadataKeyValuePair]
+    @deprecated(
+      reason: "This field is deprecated and has been superseded by 'metadata'. Metadata is now associated at the test case level."
+    )
+  tags: [Tag]
+  phase: Phase
+  automationCmd: String
+  automationExecutor: String
+  automationCleanup: String
+  automationCleanupExecutor: String
+  automationArgument: [AutomationArgument]
+  executionArtifactIdInfo: [ExecutionArtifactIdInfo]
+  attackLogProcedures: [AttackLogProcedure]
+  status: String
+  offset: Int
+  targets: [Target]
+  sources: [Source]
+  detectionGuidance: [String]
+  preventionGuidance: [String]
+  detectionTime: TimelineEvent
+  attackStop: TimelineEvent
+  attackStart: TimelineEvent
+  references: [String]
+
+  """
+  Data Ver is only relevant for ENV (non-Library) Test Cases.
+  For new Assessments, this typically defaults to a value of 2 which allows recording Test Case Outcomes at a per-tool level.
+  When set to 1, Outcome recording is in Legacy mode which records a single outcome for the Test Case and all associated tools
+  """
+  dataVer: Int
+  createTime: Float
+  updateTime: Float
+  defenseToolOutcomes: [DefenseToolOutcome]
+}
+
+type TestCaseConnection {
+  """
+  List of Test Cases
+  """
+  nodes: [TestCase]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+input TestCaseFilter {
+  name: StringOperator
+  description: StringOperator
+  mitreId: StringOperator
+  metadata: MetadataFilter
+  tags: TagFilter
+}
+
+type TestCaseMutations {
+  cloneTemplate(input: CloneTestCaseTemplateInput!): CreateTestCasePayload
+
+  """
+  Creates a Test Case template in the Administration section
+  """
+  createTemplate(input: CreateTestCaseTemplateInput!): CreateTestCasePayload
+
+  """
+  Creates a Test Case in the target database only, does not create a template
+  """
+  createWithoutTemplate(
+    input: CreateTestCaseWithoutTemplateInput!
+  ): CreateTestCasePayload
+
+  """
+  Creates a Test Case in the target database and matches to an existing template by name or creates a new one if no match is found
+  """
+  createWithTemplateMatchByName(
+    input: CreateTestCaseAndTemplateMatchByNameInput!
+  ): CreateTestCasePayload
+  createWithTemplateMatchByLibraryId(
+    input: CreateTestCaseMatchByLibraryIdInput!
+  ): CreateTestCasePayload
+  delete(input: DeleteTestCaseInput!): DeleteTestCasePayload
+  deleteTemplate(
+    input: DeleteTestCaseTemplateInput!
+  ): DeleteTestCaseTemplatePayload
+  update(input: UpdateTestCaseInput!): UpdateTestCasePayload
+  updateTemplate(input: UpdateTestCaseTemplateInput!): UpdateTestCasePayload
+  addAttackLogProcedure(
+    input: AddAttackLogToTestCaseInput!
+  ): AddAttackLogToTestCasePayload
+}
+
+"""
+Properties by which a Test Case connection can be ordered
+"""
+enum TestCaseSortField {
+  """
+  Order by creation time
+  """
+  CREATE_TIME
+
+  """
+  Order alphabetically by name
+  """
+  NAME
+
+  """
+  Order by MITRE ID
+  """
+  MITRE_ID
+}
+
+input TestCaseSortOrder {
+  """
+  The direction in which to order by the specified field
+  """
+  direction: OrderDirection = ASC
+
+  """
+  The field in which to order by
+  """
+  field: TestCaseSortField!
+}
+
+"""
+input TestCaseParent {
+    campaign: String
+    assessment: String
+}
+"""
+enum TestCaseStatus {
+  Completed
+  NotPerformed
+  InProgress
+  Paused
+  Abandon
+}
+
+type TimelineEvent {
+  id: String
+  team: String
+  fieldName: String
+  fieldAction: String
+  type: String
+  manualDescription: String
+  createTime: Float
+  updateTime: Float
+}
+
+type UnstructuredLog {
+  id: String
+  content: String
+  filename: String
+  createTime: Float
+  updateTime: Float
+}
+
+type UnstructuredLogConnection {
+  """
+  List of Unstructured Logs
+  """
+  nodes: [UnstructuredLog]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+type UnstructuredLogMutations {
+  delete(input: DeleteUnstructuredLogInput!): DeleteUnstructuredLogPayload
+}
+
+input UpdateAssessmentDataInput {
+  id: String!
+  name: String
+  description: String
+  organizationIds: [String!]
+  tagIds: [String!]
+  attackLifeCycleId: String
+}
+
+input UpdateAssessmentInput {
+  assessmentData: [UpdateAssessmentDataInput!]!
+}
+
+type UpdateAssessmentPayload {
+  assessments: [Assessment]
+}
+
+input UpdateAssessmentTemplateDataInput {
+  id: String!
+  name: String
+  description: String
+  organizationIds: [String!]
+  campaignIds: [String!]
+  tagIds: [String!]
+  attackLifeCycleId: String
+}
+
+input UpdateAssessmentTemplateInput {
+  assessmentData: [UpdateAssessmentTemplateDataInput!]!
+}
+
+type UpdateCampaignPayload {
+  campaigns: [Campaign]
+}
+
+input UpdateCampaignTemplateDataInput {
+  id: String!
+  name: String!
+  description: String
+  testCaseIds: [String!]
+  organizationIds: [String!]
+}
+
+input UpdateCampaignTemplateInput {
+  campaignTemplateData: [UpdateCampaignTemplateDataInput!]!
+}
+
+input UpdateChangelogAnalystNoteInput {
+  id: String
+  note: String!
+  noteType: String
+  leftFieldIdentifierId: String
+  rightFieldIdentifierId: String
+}
+
+type UpdateChangelogAnalystNotebookPayload {
+  notebooks: [ChangelogAnalystNotebook]
+}
+
+input UpdateChangelogNotebookDataInput {
+  id: String!
+  name: String
+  description: String
+  notes: [UpdateChangelogAnalystNoteInput!]
+}
+
+input UpdateDefenseToolProductDataInput {
+  id: String!
+  name: String
+  description: String
+  icon: String
+  defenseLayerIds: [String]
+  vendorId: String
+}
+
+input UpdateDefenseToolProductInput {
+  defenseToolProducts: [UpdateDefenseToolProductDataInput]
+}
+
+type UpdateDefenseToolProductPayload {
+  defenseToolProducts: [DefenseToolProduct]
+}
+
+"""
+Note that this update method doesn't support nullability
+"""
+input UpdateOutcomeDataInput {
+  id: String!
+  abbreviation: String
+  reportText: String
+
+  """
+  Hex Color string like "#F44336"
+  """
+  reportTextColor: String
+  coverageScore: Float
+}
+
+"""
+input CreateOutcomeInput {
+    outcomeData: [CreateOutcomeDataInput!]!
+}
+"""
+input UpdateOutcomeInput {
+  updateOutcomeData: [UpdateOutcomeDataInput!]!
+}
+
+input UpdateTestCaseDataInput {
+  testCaseId: String!
+  operatorGuidance: String
+  description: String
+  addTagsByName: [String!]
+  removeTagsByName: [String!]
+
+  """
+  These fields are used when updating non-template test case
+  """
+  outcomeNotes: String
+  outcome: String
+  outcomeEventTime: String
+
+  """
+  Used to specify what detection tools were used in this testcase.
+  """
+  outcomeDefenseToolIds: [String!]
+
+  """
+  Used to tie specific outcome results to detection tools.
+  """
+  defenseToolOutcomes: [DefenseToolOutcomeInput]
+  currentStatus: TestCaseStatus
+  attackStartTime: String
+  attackStopTime: String
+  executionArtifactIdInfo: [ExecutionArtifactIdInfoInput]
+  attackAutomation: AttackAutomationInput
+  dataVer: Int
+  overrideOutcome: Boolean
+}
+
+input UpdateTestCaseInput {
+  db: String!
+  testCaseUpdates: [UpdateTestCaseDataInput!]
+}
+
+type UpdateTestCasePayload {
+  testCases: [TestCase]
+}
+
+input UpdateTestCaseTemplateDataInput {
+  name: String!
+  description: String
+  phase: String
+  technique: String
+  tags: [String]
+  organization: String
+
+  """
+     campaign: String
+     assessment: String
+  Blue team
+  """
+  defenses: [String]
+  detectionSteps: [String]
+  preventionSteps: [String]
+
+  """
+  Red team
+  """
+  references: [String]
+  redTools: [RedToolInput]
+
+  """
+  NOTE: This is not yet implemented for cloning, won't do anything
+  """
+  redTeamMetadata: [MetadataKeyValuePairInput!]
+  blueTeamMetadata: [MetadataKeyValuePairInput!]
+  attackAutomation: AttackAutomationInput
+  operatorGuidance: String
+}
+
+input UpdateTestCaseTemplateInput {
+  testCaseUpdates: [UpdateTestCaseDataInput!]
+}
+
+type UploadedVectrSSLConfig {
+  differsFromCurrent: Boolean
+  config: VectrSSLConfig
+}
+
+type VectrAppConfig {
+  vectrHostname: String
+}
+
+type VectrSSLConfig {
+  type: String
+  signatureAlgorithm: String
+  sanNames: [String]
+  subjectName: String
+  issuerName: String
+  validFrom: String
+  validTo: String
+  isUserCert: Boolean
+  certProfile: String
+}
+
+input VectrSSLConfigInput {
+  """
+  public x509 certificate (contents should include 'BEGIN CERTIFICATE')
+  """
+  crt: String!
+
+  """
+  private key (contents should include 'BEGIN PRIVATE KEY')
+  """
+  key: String!
+}
+
+type VectrSSLConfigPayload {
+  status: SimpleOperationStatus!
+  message: String!
+  record: VectrSSLConfig
+}
+
+type Vendor {
+  id: String!
+  name: String
+  icon: String
+  offset: Int
+  createTime: Float
+  updateTime: Float
+}
+
+type VendorConnection {
+  """
+  List of Vendors
+  """
+  nodes: [Vendor]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}

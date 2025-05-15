@@ -1,0 +1,151 @@
+package main
+
+import (
+	"bufio"
+	"compress/gzip"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+
+	"sra/vat" // Replace with the actual package name for your vat API
+
+	"log/slog"
+
+	"filippo.io/age"
+	"github.com/spf13/cobra"
+)
+
+var (
+	inputFile      string
+	passphraseFile string
+)
+
+// Create a restore subcommand
+var restoreCmd = &cobra.Command{
+	Use:   "restore",
+	Short: "Restore an assessment to the VECTR instance",
+	Run: func(cmd *cobra.Command, args []string) {
+		// Set up a context with signal handling
+		ctx, cancel := context.WithCancel(context.WithValue(context.Background(), "version", version))
+		defer cancel()
+
+		// Handle Ctrl-C (SIGINT) and other termination signals
+		signalChan := make(chan os.Signal, 1)
+		signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+		go func() {
+			defer signal.Reset()
+			<-signalChan
+			slog.Info("\nReceived interrupt signal, shutting down gracefully. Ctrl+C again to force shutdown...")
+			cancel()
+		}()
+
+		// Read credentials from the file
+		credentials, err := os.ReadFile(credentialsFile)
+		if err != nil {
+			slog.Error("Failed to read credentials file", "error", err)
+			os.Exit(1)
+		}
+
+		// Read the passphrase
+		passphrase, err := getPassphrase(passphraseFile)
+		if err != nil {
+			slog.Error("Failed to read passphrase", "error", err)
+			os.Exit(1)
+		}
+
+		// Open the encrypted input file
+		encryptedFile, err := os.Open(inputFile)
+		if err != nil {
+			slog.Error("Failed to open input file", "error", err)
+			os.Exit(1)
+		}
+		defer encryptedFile.Close()
+
+		// Set up the age decryption
+		identity, err := age.NewScryptIdentity(passphrase)
+		if err != nil {
+			slog.Error("Failed to create scrypt identity", "error", err)
+			os.Exit(1)
+		}
+
+		decryptor, err := age.Decrypt(encryptedFile, identity)
+		if err != nil {
+			slog.Error("Failed to initialize decryption", "error", err)
+			os.Exit(1)
+		}
+
+		// Set up GZIP decompression
+		gzipReader, err := gzip.NewReader(decryptor)
+		if err != nil {
+			slog.Error("Failed to initialize GZIP decompression", "error", err)
+			os.Exit(1)
+		}
+		defer gzipReader.Close()
+
+		// Read and deserialize the JSON data
+		var assessmentData vat.AssessmentData
+		if err := json.NewDecoder(gzipReader).Decode(&assessmentData); err != nil {
+			slog.Error("Failed to decode JSON data", "error", err)
+			os.Exit(1)
+		}
+
+		// Set up the VECTR client
+		client := vat.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), insecure)
+
+		optionalParams := &vat.RestoreOptionalParams{
+			AssessmentName:             targetAssessmentName,
+			OverrideAssessmentTemplate: overrideAssessmentTemplate,
+		}
+
+		// Restore the assessment
+		if err := vat.RestoreAssessment(ctx, client, db, &assessmentData, optionalParams); err != nil {
+			slog.Error("Failed to restore assessment", "error", err)
+			os.Exit(1)
+		}
+
+		slog.Info("Assessment restored successfully")
+	},
+}
+
+func init() {
+	// Add flags to the restore command
+	restoreCmd.Flags().StringVar(&db, "db", "", "Database to restore the assessment to (required)")
+	restoreCmd.Flags().StringVar(&hostname, "hostname", "", "Hostname of the VECTR instance (required)")
+	restoreCmd.Flags().StringVar(&credentialsFile, "vectr-creds-file", "", "Path to the credentials file (required)")
+	restoreCmd.Flags().StringVar(&inputFile, "input-file", "", "Path to the encrypted input file (required)")
+	restoreCmd.Flags().StringVar(&passphraseFile, "passphrase-file", "", "Path to the file containing the decryption passphrase")
+	restoreCmd.Flags().StringVar(&targetAssessmentName, "target-assessment-name", "", "The assessment name to set in the new instance")
+	restoreCmd.Flags().BoolVarP(&insecure, "insecure", "k", false, "Allow insecure connections to the instance (e.g., ignore TLS certificate errors)")
+	restoreCmd.Flags().BoolVar(&overrideAssessmentTemplate, "override-template-assessment", false, "Override any set template name in the serialized data and load template test cases anyway")
+
+	// Mark flags as required
+	restoreCmd.MarkFlagRequired("db")
+	restoreCmd.MarkFlagRequired("hostname")
+	restoreCmd.MarkFlagRequired("credentials-file")
+	restoreCmd.MarkFlagRequired("input-file")
+}
+
+// getPassphrase reads the passphrase from a file or interactively via readline.
+func getPassphrase(passphraseFile string) (string, error) {
+	if passphraseFile != "" {
+		// Read the passphrase from the file
+		passphrase, err := os.ReadFile(passphraseFile)
+		if err != nil {
+			return "", fmt.Errorf("failed to read passphrase file: %w", err)
+		}
+		return strings.TrimSpace(string(passphrase)), nil
+	}
+
+	// Read the passphrase interactively
+	fmt.Print("Enter decryption passphrase: ")
+	reader := bufio.NewReader(os.Stdin)
+	passphrase, err := reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("failed to read passphrase: %w", err)
+	}
+	return strings.TrimSpace(passphrase), nil
+}

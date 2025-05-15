@@ -1,0 +1,24 @@
+query GetAllDefenseTools($db: String!) {
+  bluetools(db: $db) {
+    nodes {
+      id
+      name
+      description
+      active
+      defensiveLayers {
+        id
+        name
+      }
+      defenseToolProduct {
+        id
+        name
+        ref
+        description
+        icon
+        vendor {
+          name
+        }
+      }
+    }
+  }
+}

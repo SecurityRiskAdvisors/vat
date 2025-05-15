@@ -1,0 +1,19 @@
+query GetTestCaseforDb($db: String!) {
+  testcases(db: $db, filter: {}, orderBy: { direction: ASC, field: NAME }) {
+    nodes {
+      id
+      name
+      targets {
+        name
+        description
+      }
+      sources {
+        name
+      }
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}

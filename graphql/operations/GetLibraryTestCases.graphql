@@ -1,0 +1,48 @@
+query GetLibraryTestCases($ids: [String]!) {
+  libraryTestcasesByIds(ids: $ids) {
+    nodes {
+      id
+      name
+      description
+      method
+      libraryTestCaseId
+      mitreId
+      organizations {
+        name
+      }
+      defensiveLayers {
+        name
+      }
+      operatorGuidance
+      redTools {
+        id
+        name
+        vendor {
+          name
+        }
+      }
+      metadata {
+        key
+        value
+      }
+      tags {
+        name
+      }
+      phase {
+        name
+      }
+      automationCmd
+      automationExecutor
+      automationCleanup
+      automationCleanupExecutor
+      automationArgument {
+        argumentKey
+        argumentValue
+        argumentType
+      }
+      detectionGuidance
+      preventionGuidance
+      references
+    }
+  }
+}

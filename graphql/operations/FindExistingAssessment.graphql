@@ -1,0 +1,12 @@
+# This is a clone of the other one b/c we don't want all the data
+query FindExistingAssessment($db: String!, $assessmentName: String!) {
+  assessments(
+    db: $db
+    filter: { name: { eq: $assessmentName } }
+  ) {
+    nodes {
+      id
+      name
+    }
+  }
+}

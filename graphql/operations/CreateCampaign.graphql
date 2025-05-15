@@ -1,0 +1,11 @@
+mutation CreateCampaigns($input: CreateCampaignInput!){
+  campaign {
+    create(
+      input: $input) {
+      campaigns {
+        id
+        name
+      }
+    }
+  }
+}

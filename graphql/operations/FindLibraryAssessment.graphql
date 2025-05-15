@@ -1,0 +1,11 @@
+query FindLibraryAssessment($name: String!) {
+  libraryAssessments(
+    filter: { name: { eq: $name } }
+    first: 1
+    orderBy: { direction: ASC, field: NAME }
+  ) {
+    nodes {
+      name
+    }
+  }
+}

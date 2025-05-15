@@ -1,0 +1,16 @@
+# @genqlient(for: "CreateTestCaseDataInput.attackAutomation", omitempty: true, pointer:true)
+# @genqlient(for: "CreateTestCaseDataInput.redTools", omitempty: true)
+# @genqlient(for: "RedToolInput.vendor", omitempty: true, pointer:true)
+# @genqlient(for: "DefenseToolInput.vendor", omitempty: true, pointer:true)
+mutation CreateTestCasesNoTemplate(
+    $input: CreateTestCaseWithoutTemplateInput!
+    ) {
+  testCase {
+    createWithoutTemplate(input: $input) {
+      testCases {
+        id
+        name
+      }
+    }
+  }
+}
