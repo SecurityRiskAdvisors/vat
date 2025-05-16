@@ -55,6 +55,9 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 
 	assessment, err := GetAllAssessments(ctx, client, db, assessment_name)
 	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.Error("detailed error", "error", gqlObject)
+		}
 		return nil, fmt.Errorf("could not fetch assessment from instance: %w", err)
 	}
 
@@ -99,6 +102,9 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 	if len(ids) > 0 {
 		r, err := GetLibraryTestCases(ctx, client, ids)
 		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.Error("detailed error", "error", gqlObject)
+			}
 			return nil, fmt.Errorf("could not fetch library test cases from: %s: %w", db, err)
 		}
 
@@ -111,6 +117,9 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		"db", db)
 	btr, err := GetAllDefenseTools(ctx, client, db)
 	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.Error("detailed error", "error", gqlObject)
+		}
 		return nil, fmt.Errorf("could not connect to fetch blue tools for %s: %w", db, err)
 	}
 

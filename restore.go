@@ -164,6 +164,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	for _, o := range ad.Organizations {
 		r, err := FindOrganization(ctx, client, o)
 		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.Error("detailed error", "error", gqlObject)
+			}
 			return fmt.Errorf("could not fetch organization: %s: %w", o, err)
 		}
 		if len(r.Organizations.Nodes) == 0 {
@@ -183,6 +186,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	instance_tools, err := GetAllDefenseTools(ctx, client, db)
 	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.Error("detailed error", "error", gqlObject)
+		}
 		return fmt.Errorf("could not fetch tools: %w", err)
 	}
 
@@ -223,6 +229,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	lookup_assessments, err := FindExistingAssessment(ctx, client, db, ad.Assessment.Name)
 	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.Error("detailed error", "error", gqlObject)
+		}
 		return fmt.Errorf("could not fetch data about assessment %s, error: %w", ad.Assessment.Name, err)
 	}
 	if len(lookup_assessments.Assessments.Nodes) > 0 {
@@ -246,6 +255,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		}
 		t, err := FindLibraryAssessment(ctx, client, prefix+ad.TemplateAssessment)
 		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.Error("detailed error", "error", gqlObject)
+			}
 			return fmt.Errorf("could not fetch library assessment for %s: %w", ad.TemplateAssessment, err)
 		}
 		slog.Debug("checking for library test case content")
@@ -264,6 +276,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				gqlerrlist, ok := err.(gqlerror.List)
 				if !ok {
 					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
+				}
+				if gqlObject, ok := gqlErrParse(err); ok {
+					slog.Error("detailed error", "error", gqlObject)
 				}
 
 				// the error type we expect only has one entry for this path
@@ -312,6 +327,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				if len(ids_to_fetch) > 0 {
 					r, err = GetLibraryTestCases(ctx, client, ids_to_fetch)
 					if err != nil {
+						if gqlObject, ok := gqlErrParse(err); ok {
+							slog.Error("detailed error", "error", gqlObject)
+						}
 						// this time, actually just bail out. this should have been a clean insert
 						return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
 					}
@@ -350,6 +368,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			)
 			_, err := CreateTemplateTestCases(ctx, client, input)
 			if err != nil {
+				if gqlObject, ok := gqlErrParse(err); ok {
+					slog.Error("detailed error", "error", gqlObject)
+				}
 				return fmt.Errorf("could not write extra template test cases, err: %w", err)
 			}
 		}
@@ -370,6 +391,10 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 			_, err := CreateTemplateTestCases(ctx, client, input)
 			if err != nil {
+				if gqlObject, ok := gqlErrParse(err); ok {
+					slog.Error("full gql error", "error", gqlObject)
+				}
+
 				return fmt.Errorf("could not write template test cases: %w", err)
 			}
 			slog.Info("inserted all library test cases", "total", len(input.TestCaseTemplateData))
@@ -414,6 +439,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	a, err := CreateAssessment(ctx, client, *assessment)
 	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.Error("detailed error", "error", gqlObject)
+		}
 		return fmt.Errorf("could not create assessment container: %s: %w", assessment.AssessmentData[0].Name, err)
 	}
 	//a.Assessment.Create.Assessments[0].Id
@@ -442,6 +470,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		"assessment_name", ad.Assessment.Name)
 	r, err := CreateCampaigns(ctx, client, campaigns)
 	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.Error("detailed error", "error", gqlObject)
+		}
 		return fmt.Errorf("could not create campaigns for %s, suggest deleting the assessment: %w", a.Assessment.Create.Assessments[0].Name, err)
 	}
 	// Note that this creates a bug where if two campaigns are the same name, it will not work.
@@ -576,12 +607,18 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		if len(tc_with_template_name.CreateTestCaseInputs) > 0 {
 			_, err := CreateTestCases(ctx, client, tc_with_template_name)
 			if err != nil {
+				if gqlObject, ok := gqlErrParse(err); ok {
+					slog.Error("detailed error", "error", gqlObject)
+				}
 				return fmt.Errorf("could not write test cases for %s: %w", ad.Assessment.Name, err)
 			}
 		}
 		if len(tc_no_template.TestCaseData) > 0 {
 			_, err := CreateTestCasesNoTemplate(ctx, client, tc_no_template)
 			if err != nil {
+				if gqlObject, ok := gqlErrParse(err); ok {
+					slog.Error("detailed error", "error", gqlObject)
+				}
 				return fmt.Errorf("could not write test cases for %s: %w", ad.Assessment.Name, err)
 			}
 		}

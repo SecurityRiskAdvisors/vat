@@ -3,6 +3,8 @@ package vat
 import (
 	_ "embed"
 	"encoding/json"
+
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 type VersionKey string
@@ -56,4 +58,24 @@ func DecodeJson(data []byte) (*AssessmentData, error) {
 		return nil, err
 	}
 	return &a, nil
+}
+
+func gqlErrParse(err error) (any, bool) {
+
+	// we don't actually need the object
+	// just make sure it maps
+	if _, ok := err.(gqlerror.List); !ok {
+		return nil, false
+	}
+	b, e := json.Marshal(err)
+	if e != nil {
+		return nil, false
+	}
+
+	var a any
+	e = json.Unmarshal(b, &a)
+	if e != nil {
+		return nil, false
+	}
+	return a, true
 }
