@@ -51,6 +51,11 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 	data := &AssessmentData{
 		ToolsMap:   map[string]GenericBlueTool{},
 		IdToolsMap: map[string]GenericBlueTool{},
+		OptionalFields: struct {
+			OrgMap map[string]GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+		}{
+			OrgMap: make(map[string]GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
+		},
 	}
 
 	assessment, err := GetAllAssessments(ctx, client, db, assessment_name)
@@ -71,7 +76,7 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 	data.Assessment = assessment.Assessments.Nodes[0]
 
 	for _, org := range data.Assessment.Organizations {
-		data.Organizations = append(data.Organizations, org.Name)
+		data.OptionalFields.OrgMap[org.Name] = org
 	}
 
 	// check if there is a library assessment (bundle) to use
@@ -85,6 +90,9 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 	data.LibraryTestCases = map[string]GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase{}
 
 	for _, c := range data.Assessment.Campaigns {
+		for _, o := range c.Organizations {
+			data.OptionalFields.OrgMap[o.Name] = GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization(o)
+		}
 		for _, tc := range c.TestCases {
 			if tc.LibraryTestCaseId != "" && tc.LibraryTestCaseId != "null" {
 				slog.Debug("Fetching library test case", "test_case_id", tc.LibraryTestCaseId)
@@ -150,6 +158,9 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 	data.Metadata = &VatMetadata{
 		SaveData: NewVatOpMetadata(ctx),
 	}
+
+	// get a unique list of the orgs
+	data.Organizations = slices.Collect(maps.Keys(data.OptionalFields.OrgMap))
 	slog.Info("Writing vat header", "date", data.Metadata.SaveData.Date, "vat-version", data.Metadata.SaveData.Version)
 
 	return data, nil
