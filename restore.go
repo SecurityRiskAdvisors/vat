@@ -167,7 +167,13 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			if gqlObject, ok := gqlErrParse(err); ok {
 				slog.Error("detailed error", "error", gqlObject)
 			}
-			return fmt.Errorf("could not fetch organization: %s: %w", o, err)
+			if ad.OptionalFields.OrgMap != nil {
+				om := ad.OptionalFields.OrgMap[o]
+				return fmt.Errorf("could not fetch organization: %s, %s, %s, %s: %w", om.Name, om.Abbreviation, om.Description, om.Url, err)
+
+			} else {
+				return fmt.Errorf("could not fetch organization: %s: %w", o, err)
+			}
 		}
 		if len(r.Organizations.Nodes) == 0 {
 			missing_orgs = append(missing_orgs, o)
@@ -179,6 +185,13 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		"total", len(ad.Organizations),
 		"missing_orgs", missing_orgs)
 	if len(missing_orgs) > 0 {
+		// if the fields exist, then let's print em
+		if ad.OptionalFields.OrgMap != nil {
+			for _, org := range missing_orgs {
+				om := ad.OptionalFields.OrgMap[org]
+				slog.Error("missing organization", "name", om.Name, "abbreviation", om.Abbreviation, "desc", om.Description, "url", om.Url)
+			}
+		}
 		return fmt.Errorf("these orgs are missing from your instance: %s: %w", strings.Join(missing_orgs, ","), ErrOrgNotFound)
 	}
 
@@ -458,7 +471,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			Description: c.Description,
 		}
 		for _, o := range c.Organizations {
-			campaign.OrganizationIds = append(campaign.OrganizationIds, o.Id)
+			campaign.OrganizationIds = append(campaign.OrganizationIds, org_map[o.Name].Id)
 		}
 		for _, md := range c.Metadata {
 			campaign.Metadata = append(campaign.Metadata, MetadataKeyValuePairInput(md))

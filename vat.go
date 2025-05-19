@@ -29,6 +29,9 @@ type AssessmentData struct {
 	ToolsMap           map[string]GenericBlueTool
 	IdToolsMap         map[string]GenericBlueTool
 	Metadata           *VatMetadata
+	OptionalFields     struct { // these fields will never be required on the restore side, so can be added to without changing the major version of the application
+		OrgMap map[string]GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+	}
 }
 
 // EncodeToJson is a convienience function converts an `AssessmentData` struct into a JSON-encoded byte slice.
