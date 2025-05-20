@@ -106,7 +106,7 @@ generate:
  build:
 	@echo "Building $(APP_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	@go build -o $(BUILD_DIR)/$(APP_NAME) -ldflags "-X main.version=$(VERSION)" $(BUILD_LOCATION)
+	@CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(APP_NAME) -ldflags "-X main.version=$(VERSION)" $(BUILD_LOCATION)
 	@echo "Build complete. Binary is located in $(BUILD_DIR)/$(APP_NAME)."
 
 # Multi-arch build
@@ -121,7 +121,7 @@ build-multiarch:
 				output_name=$$output_name.exe; \
 			fi; \
 			echo "Building for $$os/$$arch..."; \
-			GOOS=$$os GOARCH=$$arch go build -o $$output_name -ldflags "-X main.version=$(VERSION)" $(BUILD_LOCATION) || exit 1; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build -o $$output_name -ldflags "-X main.version=$(VERSION)" $(BUILD_LOCATION) || exit 1; \
 			if [ $$os = "windows" ]; then \
 				zip -j $$output_name-$(VERSION).zip $$output_name; \
 			else \
