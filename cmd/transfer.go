@@ -57,6 +57,21 @@ var transferCmd = &cobra.Command{
 
 		// Set up the source VECTR client
 		sourceClient := vat.SetupVectrClient(sourceHostname, strings.TrimSpace(string(sourceCredentials)), insecure)
+		if validateCreds(ctx, sourceClient, sourceHostname) {
+			slog.Info("Access validated", "hostname", sourceHostname)
+		} else {
+			// errors printed in function
+			os.Exit(1)
+		}
+
+		// Set up the target VECTR client
+		targetClient := vat.SetupVectrClient(targetHostname, strings.TrimSpace(string(targetCredentials)), insecure)
+		if validateCreds(ctx, targetClient, targetHostname) {
+			slog.Info("Access validated", "hostname", targetHostname)
+		} else {
+			// errors printed in function
+			os.Exit(1)
+		}
 
 		// Fetch the assessment data from the source instance
 		slog.Info("Fetching assessment data from source instance", "hostname", sourceHostname, "db", sourceDB)
@@ -65,9 +80,6 @@ var transferCmd = &cobra.Command{
 			slog.Error("Failed to fetch assessment data from source instance", "error", err)
 			os.Exit(1)
 		}
-
-		// Set up the target VECTR client
-		targetClient := vat.SetupVectrClient(targetHostname, strings.TrimSpace(string(targetCredentials)), insecure)
 
 		optionalParams := &vat.RestoreOptionalParams{
 			AssessmentName:             targetAssessmentName,

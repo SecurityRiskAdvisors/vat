@@ -290,27 +290,36 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				if !ok {
 					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
 				}
-				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.Error("detailed error", "error", gqlObject)
-				}
 
 				// the error type we expect only has one entry for this path
 				if !(len(gqlerrlist) == 1 && gqlerrlist[0].Path.String() == "libraryTestcasesByIds") {
+					if gqlObject, ok := gqlErrParse(err); ok {
+						slog.Error("detailed error", "error", gqlObject)
+					}
 					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
 				}
 				// there should be an `ids` field in the extensions object
 				rawids, ok := gqlerrlist[0].Extensions["ids"]
 				if !ok {
+					if gqlObject, ok := gqlErrParse(err); ok {
+						slog.Error("detailed error", "error", gqlObject)
+					}
 					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
 				}
 				// the `ids` filed should only have one entry
 				ids, ok := rawids.([]any)
 				if !(ok && len(ids) == 1) {
+					if gqlObject, ok := gqlErrParse(err); ok {
+						slog.Error("detailed error", "error", gqlObject)
+					}
 					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
 				}
 
 				id := ids[0].(string)
 				if !strings.HasPrefix(id, "The following IDs were not valid") {
+					if gqlObject, ok := gqlErrParse(err); ok {
+						slog.Error("detailed error", "error", gqlObject)
+					}
 					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
 				}
 				// this is a case where we got an error back for an otherwise valid query, one or more of the ids are not valid

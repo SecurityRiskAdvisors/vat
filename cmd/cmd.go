@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"os"
+	"sra/vat"
 
 	"log/slog"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
 )
 
@@ -51,4 +55,30 @@ func Execute() {
 
 func main() {
 	Execute()
+}
+
+func validateCreds(ctx context.Context, client graphql.Client, h string) bool {
+	// validate connection
+	r, err := vat.Introspect(ctx, client)
+	if err != nil {
+		var e any
+		b, jerr := json.Marshal(r)
+		if jerr != nil {
+			slog.Error("Could not validate creds", "hostname", h, "error", err, "parsing-error", jerr)
+			return false
+		}
+		jerr = json.Unmarshal(b, &e)
+		if jerr != nil {
+			slog.Error("Could not validate creds", "hostname", h, "error", err, "parsing-error", jerr)
+			return false
+		}
+		slog.Error("could not validate creds", "hostname", h, "error", err, "detailed-error", e)
+		return false
+
+	}
+	if r.Schema.QueryType.Name != vat.INTROSPECTION_QUERYTYPE {
+		slog.Error("Validation attempt failed, response did not validate, please open a bug", "response", r, "hostname", h)
+		return false
+	}
+	return true
 }

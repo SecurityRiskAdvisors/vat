@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -53,6 +54,12 @@ var saveCmd = &cobra.Command{
 
 		// Set up the VECTR client
 		client := vat.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), insecure)
+		if validateCreds(ctx, client, hostname) {
+			slog.Info("Access validated", "hostname", hostname)
+		} else {
+			// errors printed in function
+			os.Exit(1)
+		}
 
 		// Call SaveAssessmentData
 		data, err := vat.SaveAssessmentData(ctx, client, db, assessmentName)

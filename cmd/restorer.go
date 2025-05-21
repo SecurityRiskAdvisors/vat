@@ -96,6 +96,13 @@ var restoreCmd = &cobra.Command{
 		// Set up the VECTR client
 		client := vat.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), insecure)
 
+		if validateCreds(ctx, client, hostname) {
+			slog.Info("Access validated", "hostname", hostname)
+		} else {
+			// errors printed in function
+			os.Exit(1)
+		}
+
 		optionalParams := &vat.RestoreOptionalParams{
 			AssessmentName:             targetAssessmentName,
 			OverrideAssessmentTemplate: overrideAssessmentTemplate,

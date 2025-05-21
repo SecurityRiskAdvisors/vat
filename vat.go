@@ -12,6 +12,8 @@ type VersionNumber string
 
 const VERSION VersionKey = "VERSION"
 
+const INTROSPECTION_QUERYTYPE string = "Query"
+
 //go:embed LICENSE
 var License string
 
