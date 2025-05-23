@@ -7,12 +7,8 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-type VersionKey string
-type VersionNumber string
-
-const VERSION VersionKey = "VERSION"
-
-const INTROSPECTION_QUERYTYPE string = "Query"
+type VatContextKey string
+type VatContextValue string
 
 //go:embed LICENSE
 var License string

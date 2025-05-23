@@ -1,7 +1,0 @@
-query Introspect {
-  __schema {
-    queryType {
-      name
-    }
-  }
-}

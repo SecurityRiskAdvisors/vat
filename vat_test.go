@@ -94,8 +94,8 @@ func TestRoundtripAssessmentData(t *testing.T) {
 	src_assessment := os.Getenv("SOURCE_ASSESSMENT")
 	dst_db := os.Getenv("DEST_DB")
 
-	s := vat.SetupVectrClient(src_hostname, src_creds, true)
-	d := vat.SetupVectrClient(dst_hostname, dst_creds, true)
+	s, _ := vat.SetupVectrClient(src_hostname, src_creds, true)
+	d, _ := vat.SetupVectrClient(dst_hostname, dst_creds, true)
 
 	o, err := vat.SaveAssessmentData(ctx, s, src_db, src_assessment)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestNewVatMetadata(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		version_string := rapid.String().Draw(t, "version")
 
-		ctx := context.WithValue(context.Background(), vat.VERSION, vat.VersionNumber(version_string))
+		ctx := context.WithValue(context.Background(), vat.VERSION, vat.VatContextValue(version_string))
 
 		md := vat.NewVatOpMetadata(ctx)
 

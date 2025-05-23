@@ -158,7 +158,25 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		"db", db,
 		"assessment_name", ad.Assessment.Name,
 		"organization_count", len(ad.Organizations),
-		"tool_count", len(ad.ToolsMap))
+		"tool_count", len(ad.ToolsMap),
+	)
+
+	if ad.Metadata != nil {
+		ad.Metadata.LoadData = NewVatOpMetadata(ctx)
+	} else {
+		ad.Metadata = &VatMetadata{
+			LoadData: NewVatOpMetadata(ctx),
+		}
+	}
+
+	if ad.Metadata.LoadData.VectrVersion != TAGGED_VECTR_VERSION {
+		slog.Warn("VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", ad.Metadata.LoadData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION, "vat-version", ad.Metadata.SaveData.Version)
+	}
+
+	if ad.Metadata.SaveData != nil && ad.Metadata.SaveData.VectrVersion != ad.Metadata.LoadData.VectrVersion {
+		slog.Warn("Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Metadata.SaveData.VectrVersion, "live-vectr-version", ad.Metadata.LoadData.VectrVersion)
+	}
+
 	missing_orgs := []string{}
 	org_map := make(map[string]FindOrganizationOrganizationsOrganizationConnectionNodesOrganization)
 	for _, o := range ad.Organizations {
@@ -426,14 +444,6 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	}
 
-	if ad.Metadata != nil {
-		ad.Metadata.LoadData = NewVatOpMetadata(ctx)
-	} else {
-		ad.Metadata = &VatMetadata{
-			LoadData: NewVatOpMetadata(ctx),
-		}
-	}
-
 	// Step 4: Create the assessment
 	slog.Info("Creating assessment",
 		"assessment_name", ad.Assessment.Name)
@@ -487,7 +497,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		}
 		campaigns.CampaignData = append(campaigns.CampaignData, campaign)
 	}
-	slog.Info("Creating campaigns",
+	slog.Debug("Creating campaigns",
 		"count", len(campaigns.CampaignData),
 		"assessment_name", ad.Assessment.Name)
 	r, err := CreateCampaigns(ctx, client, campaigns)
@@ -505,7 +515,12 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		campaign_map[cdata.Name] = cdata.Id
 	}
 
+	slog.Info("Campaigns created",
+		"count", len(campaigns.CampaignData),
+		"assessment_name", ad.Assessment.Name)
+
 	// Step 6: Create the test cases but need to do a calculation if the highest outcome from the tool doesn't match the test case, set override
+	testCaseCount := 0
 	for _, c := range ad.Assessment.Campaigns {
 		// there could be a mix of test case types in a campaign, so add both types in
 		tc_with_template_name := CreateTestCaseAndTemplateMatchByNameInput{
@@ -621,7 +636,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 			}
 		}
-		slog.Info("Creating test cases",
+		slog.Debug("Creating test cases",
 			"campaign_name", c.Name,
 			"test_case_count", len(tc_with_template_name.CreateTestCaseInputs),
 			"test-case-count-no-template", len(tc_no_template.TestCaseData),
@@ -634,6 +649,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				}
 				return fmt.Errorf("could not write test cases for %s: %w", ad.Assessment.Name, err)
 			}
+			testCaseCount += len(tc_with_template_name.CreateTestCaseInputs)
 		}
 		if len(tc_no_template.TestCaseData) > 0 {
 			_, err := CreateTestCasesNoTemplate(ctx, client, tc_no_template)
@@ -643,8 +659,10 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				}
 				return fmt.Errorf("could not write test cases for %s: %w", ad.Assessment.Name, err)
 			}
+			testCaseCount += len(tc_with_template_name.CreateTestCaseInputs)
 		}
 	}
+	slog.Info("Test cases created", "assessment-name", ad.Assessment.Name, "test-case-count", testCaseCount)
 
 	return nil
 

@@ -33,7 +33,7 @@ var saveCmd = &cobra.Command{
 	Short: "Save an assessment from the VECTR instance",
 	Run: func(cmd *cobra.Command, args []string) {
 		// Set up a context with signal handling
-		ctx, cancel := context.WithCancel(context.WithValue(context.Background(), vat.VERSION, vat.VersionNumber(version)))
+		ctx, cancel := context.WithCancel(context.WithValue(context.Background(), vat.VERSION, vat.VatContextValue(version)))
 		defer cancel()
 
 		// Handle Ctrl-C (SIGINT) and other termination signals
@@ -53,16 +53,23 @@ var saveCmd = &cobra.Command{
 		}
 
 		// Set up the VECTR client
-		client := vat.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), insecure)
-		if validateCreds(ctx, client, hostname) {
-			slog.Info("Access validated", "hostname", hostname)
-		} else {
-			// errors printed in function
+		client, vectrVersionHandler := vat.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), insecure)
+
+		// get the VECTR version (side effect - check the creds as well)
+		vectrVersion, err := vectrVersionHandler.Get(ctx)
+		if err != nil {
+			if err == vat.ErrInvalidAuth {
+				slog.Error("could not validate creds", "hostname", hostname, "error", err)
+				os.Exit(1)
+			}
+			slog.Error("could not get vectr version", "hostname", hostname, "error", err)
 			os.Exit(1)
 		}
+		slog.Info("validated credentials and fetched vectr version", "hostname", hostname, "vectr-version", vectrVersion)
+		versionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(vectrVersion))
 
 		// Call SaveAssessmentData
-		data, err := vat.SaveAssessmentData(ctx, client, db, assessmentName)
+		data, err := vat.SaveAssessmentData(versionContext, client, db, assessmentName)
 		if err != nil {
 			log.Fatalf("Failed to save assessment: %v", err)
 		}

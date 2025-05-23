@@ -56,6 +56,13 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		}{
 			OrgMap: make(map[string]GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 		},
+		Metadata: &VatMetadata{
+			SaveData: NewVatOpMetadata(ctx),
+		},
+	}
+
+	if data.Metadata.SaveData.VectrVersion != TAGGED_VECTR_VERSION {
+		slog.Warn("VECTR version mismatch, this version of vat was built for another version of VECTR", "saved-data-version", data.Metadata.SaveData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION, "vat-version", data.Metadata.SaveData.Version)
 	}
 
 	assessment, err := GetAllAssessments(ctx, client, db, assessment_name)
@@ -163,9 +170,6 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 			}
 
 		}
-	}
-	data.Metadata = &VatMetadata{
-		SaveData: NewVatOpMetadata(ctx),
 	}
 
 	// get a unique list of the orgs
