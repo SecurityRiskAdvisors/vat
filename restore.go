@@ -166,6 +166,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	} else {
 		ad.Metadata = &VatMetadata{
 			LoadData: NewVatOpMetadata(ctx),
+			SaveData: &VatOpMetadata{},
 		}
 	}
 

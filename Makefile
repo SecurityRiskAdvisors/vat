@@ -123,9 +123,9 @@ build-multiarch:
 			echo "Building for $$os/$$arch..."; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build -o $$output_name -ldflags "-X main.version=$(VERSION)" $(BUILD_LOCATION) || exit 1; \
 			if [ $$os = "windows" ]; then \
-				zip -j $$output_name-$(VERSION).zip $$output_name; \
+				zip -j $(BUILD_DIR)/$(APP_NAME)-$$os-$$arch-$(VERSION).zip $$output_name; \
 			else \
-				gzip -c $$output_name > $$output_name-$(VERSION).gz; \
+				tar -czf $$output_name-$(VERSION).tar.gz -C $(BUILD_DIR) $(APP_NAME)-$$os-$$arch; \
 			fi; \
 			rm -f $$output_name; \
 		done; \
