@@ -163,6 +163,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	if ad.Metadata != nil {
 		ad.Metadata.LoadData = NewVatOpMetadata(ctx)
+		if ad.Metadata.SaveData == nil {
+			ad.Metadata.SaveData = &VatOpMetadata{}
+		}
 	} else {
 		ad.Metadata = &VatMetadata{
 			LoadData: NewVatOpMetadata(ctx),
@@ -274,7 +277,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	// If the user wants to ignore error, go ahead and import template test cases
 	// If no template name, then go ahead and add template test cases in
 	instance_library_test_case := make(map[string]GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase, len(ad.LibraryTestCases))
-	if optionalParams.OverrideAssessmentTemplate == false && ad.TemplateAssessment != "" {
+	if !optionalParams.OverrideAssessmentTemplate && ad.TemplateAssessment != "" {
 		slog.Debug("Validating template assessment in instance",
 			"template_assessment", ad.TemplateAssessment,
 			"override_template", optionalParams.OverrideAssessmentTemplate)
@@ -710,10 +713,7 @@ func createTemplateData(template_test_case GetLibraryTestCasesLibraryTestcasesBy
 		ttc.RedTools = append(ttc.RedTools, RedToolInput{Name: redtool.Name})
 	}
 	for _, md := range template_test_case.Metadata {
-		ttc.BlueTeamMetadata = append(ttc.BlueTeamMetadata, MetadataKeyValuePairInput{
-			Key:   md.Key,
-			Value: md.Value,
-		})
+		ttc.BlueTeamMetadata = append(ttc.BlueTeamMetadata, MetadataKeyValuePairInput(md))
 	}
 	if template_test_case.AutomationCmd != "" {
 		ttc.AttackAutomation = &AttackAutomationInput{
