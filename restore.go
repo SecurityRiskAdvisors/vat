@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"sra/vat/internal/dao"
+
 	"github.com/Khan/genqlient/graphql"
 	"github.com/google/uuid"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -28,27 +30,27 @@ var ErrAssessmentAlreadyExists = fmt.Errorf("assessment already exists")
 // executorMap maps automation executor types (e.g., "powershell") to their corresponding internal representation.
 // The read part of the API does not return an ENUM or fixed type, just a generic string. This maps it back
 // to the object type
-var executorMap map[string]AttackAutomationExecutor = map[string]AttackAutomationExecutor{
-	"powershell":        AttackAutomationExecutorPowershell,
-	"inline_powershell": AttackAutomationExecutorInlinePowershell,
-	"command_prompt":    AttackAutomationExecutorCmd,
-	"sh":                AttackAutomationExecutorSh,
-	"bash":              AttackAutomationExecutorBash,
-	"":                  AttackAutomationExecutorCmd,
+var executorMap map[string]dao.AttackAutomationExecutor = map[string]dao.AttackAutomationExecutor{
+	"powershell":        dao.AttackAutomationExecutorPowershell,
+	"inline_powershell": dao.AttackAutomationExecutorInlinePowershell,
+	"command_prompt":    dao.AttackAutomationExecutorCmd,
+	"sh":                dao.AttackAutomationExecutorSh,
+	"bash":              dao.AttackAutomationExecutorBash,
+	"":                  dao.AttackAutomationExecutorCmd,
 }
 
 // outcomeStatusMap maps test case outcome statuses (e.g., "Abandoned") to their corresponding internal representation.
 // The read part of the API returns different values than the write part accepts
 // This maps the two together
 // Note -- it will always require a validation check before use
-var outcomeStatusMap map[string]TestCaseStatus = map[string]TestCaseStatus{
-	string(TestCaseStatusAbandon):      TestCaseStatusAbandon,
-	"Abandoned":                        TestCaseStatusAbandon,
-	string(TestCaseStatusNotperformed): TestCaseStatusNotperformed,
-	string(TestCaseStatusCompleted):    TestCaseStatusCompleted,
-	string(TestCaseStatusInprogress):   TestCaseStatusInprogress,
-	string(TestCaseStatusPaused):       TestCaseStatusPaused,
-	"Not Performed":                    TestCaseStatusNotperformed,
+var outcomeStatusMap map[string]dao.TestCaseStatus = map[string]dao.TestCaseStatus{
+	string(dao.TestCaseStatusAbandon):      dao.TestCaseStatusAbandon,
+	"Abandoned":                            dao.TestCaseStatusAbandon,
+	string(dao.TestCaseStatusNotperformed): dao.TestCaseStatusNotperformed,
+	string(dao.TestCaseStatusCompleted):    dao.TestCaseStatusCompleted,
+	string(dao.TestCaseStatusInprogress):   dao.TestCaseStatusInprogress,
+	string(dao.TestCaseStatusPaused):       dao.TestCaseStatusPaused,
+	"Not Performed":                        dao.TestCaseStatusNotperformed,
 }
 
 // RestoreAssessment restores an assessment to a VECTR instance by deserializing
@@ -182,9 +184,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	}
 
 	missing_orgs := []string{}
-	org_map := make(map[string]FindOrganizationOrganizationsOrganizationConnectionNodesOrganization)
+	org_map := make(map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization)
 	for _, o := range ad.Organizations {
-		r, err := FindOrganization(ctx, client, o)
+		r, err := dao.FindOrganization(ctx, client, o)
 		if err != nil {
 			if gqlObject, ok := gqlErrParse(err); ok {
 				slog.Error("detailed error", "error", gqlObject)
@@ -219,7 +221,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	// Step 2: Check if all the tools are there, alert with each tool, product info
 
-	instance_tools, err := GetAllDefenseTools(ctx, client, db)
+	instance_tools, err := dao.GetAllDefenseTools(ctx, client, db)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
 			slog.Error("detailed error", "error", gqlObject)
@@ -227,7 +229,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		return fmt.Errorf("could not fetch tools: %w", err)
 	}
 
-	tool_map := make(map[string]GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(ad.ToolsMap))
+	tool_map := make(map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(ad.ToolsMap))
 
 	missing_tools := []GenericBlueTool{}
 	slog.Debug("Validating tools",
@@ -262,7 +264,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		ad.Assessment.Name = optionalParams.AssessmentName
 	}
 
-	lookup_assessments, err := FindExistingAssessment(ctx, client, db, ad.Assessment.Name)
+	lookup_assessments, err := dao.FindExistingAssessment(ctx, client, db, ad.Assessment.Name)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
 			slog.Error("detailed error", "error", gqlObject)
@@ -276,7 +278,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	// Step 3: Check if there is a template name in the seralized data, if so check in the instance (error if not)
 	// If the user wants to ignore error, go ahead and import template test cases
 	// If no template name, then go ahead and add template test cases in
-	instance_library_test_case := make(map[string]GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase, len(ad.LibraryTestCases))
+	instance_library_test_case := make(map[string]dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase, len(ad.LibraryTestCases))
 	if !optionalParams.OverrideAssessmentTemplate && ad.TemplateAssessment != "" {
 		slog.Debug("Validating template assessment in instance",
 			"template_assessment", ad.TemplateAssessment,
@@ -288,7 +290,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				break
 			}
 		}
-		t, err := FindLibraryAssessment(ctx, client, prefix+ad.TemplateAssessment)
+		t, err := dao.FindLibraryAssessment(ctx, client, prefix+ad.TemplateAssessment)
 		if err != nil {
 			if gqlObject, ok := gqlErrParse(err); ok {
 				slog.Error("detailed error", "error", gqlObject)
@@ -296,9 +298,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			return fmt.Errorf("could not fetch library assessment for %s: %w", ad.TemplateAssessment, err)
 		}
 		slog.Debug("checking for library test case content")
-		input := CreateTestCaseTemplateInput{
+		input := dao.CreateTestCaseTemplateInput{
 			Overwrite:            true,
-			TestCaseTemplateData: []CreateTestCaseTemplateDataInput{},
+			TestCaseTemplateData: []dao.CreateTestCaseTemplateDataInput{},
 		}
 
 		ids := slices.Collect(maps.Keys(ad.LibraryTestCases))
@@ -306,7 +308,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			missing_ids := []string{}
 			// first time, we never really need to check the response, if the missing ids remain none,
 			// we don't need to do anything
-			r, err := GetLibraryTestCases(ctx, client, ids)
+			r, err := dao.GetLibraryTestCases(ctx, client, ids)
 			if err != nil {
 				gqlerrlist, ok := err.(gqlerror.List)
 				if !ok {
@@ -369,7 +371,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				// this should always be greater than 0 since there are missing ids
 				// but doesn't hurt to check
 				if len(ids_to_fetch) > 0 {
-					r, err = GetLibraryTestCases(ctx, client, ids_to_fetch)
+					r, err = dao.GetLibraryTestCases(ctx, client, ids_to_fetch)
 					if err != nil {
 						if gqlObject, ok := gqlErrParse(err); ok {
 							slog.Error("detailed error", "error", gqlObject)
@@ -410,7 +412,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				"library-assessment", prefix+ad.TemplateAssessment,
 				"template-test-cases", input.TestCaseTemplateData,
 			)
-			_, err := CreateTemplateTestCases(ctx, client, input)
+			_, err := dao.CreateTemplateTestCases(ctx, client, input)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
 					slog.Error("detailed error", "error", gqlObject)
@@ -421,9 +423,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	} else {
 		slog.Debug("adding template test cases directly")
 		// If we are ignoring existing templates or no name was set
-		input := CreateTestCaseTemplateInput{
+		input := dao.CreateTestCaseTemplateInput{
 			Overwrite:            true,
-			TestCaseTemplateData: []CreateTestCaseTemplateDataInput{},
+			TestCaseTemplateData: []dao.CreateTestCaseTemplateDataInput{},
 		}
 
 		if len(ad.LibraryTestCases) > 0 {
@@ -433,7 +435,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				instance_library_test_case[template_test_case.LibraryTestCaseId] = template_test_case
 			}
 
-			_, err := CreateTemplateTestCases(ctx, client, input)
+			_, err := dao.CreateTemplateTestCases(ctx, client, input)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
 					slog.Error("full gql error", "error", gqlObject)
@@ -451,10 +453,10 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	// Step 4: Create the assessment
 	slog.Info("Creating assessment",
 		"assessment_name", ad.Assessment.Name)
-	assessment := &CreateAssessmentInput{
+	assessment := &dao.CreateAssessmentInput{
 		Db: db,
-		AssessmentData: []CreateAssessmentDataInput{
-			CreateAssessmentDataInput{
+		AssessmentData: []dao.CreateAssessmentDataInput{
+			{
 				Name:        ad.Assessment.Name,
 				Description: ad.Assessment.Description,
 				KillChainId: ad.Assessment.KillChain.Id,
@@ -470,10 +472,10 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	}
 	ad.Assessment.Metadata = loadVatMetadata(ad.Assessment.Metadata, ad.Metadata)
 	for _, md := range ad.Assessment.Metadata {
-		assessment.AssessmentData[0].Metadata = append(assessment.AssessmentData[0].Metadata, MetadataKeyValuePairInput(md))
+		assessment.AssessmentData[0].Metadata = append(assessment.AssessmentData[0].Metadata, dao.MetadataKeyValuePairInput(md))
 	}
 
-	a, err := CreateAssessment(ctx, client, *assessment)
+	a, err := dao.CreateAssessment(ctx, client, *assessment)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
 			slog.Error("detailed error", "error", gqlObject)
@@ -483,13 +485,13 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	//a.Assessment.Create.Assessments[0].Id
 
 	// Step 5: Create the campaigns
-	campaigns := CreateCampaignInput{
+	campaigns := dao.CreateCampaignInput{
 		Db:           db,
 		AssessmentId: a.Assessment.Create.Assessments[0].Id,
-		CampaignData: []CreateCampaignDataInput{},
+		CampaignData: []dao.CreateCampaignDataInput{},
 	}
 	for _, c := range ad.Assessment.Campaigns {
-		campaign := CreateCampaignDataInput{
+		campaign := dao.CreateCampaignDataInput{
 			Name:        c.Name,
 			Description: c.Description,
 		}
@@ -497,14 +499,14 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			campaign.OrganizationIds = append(campaign.OrganizationIds, org_map[o.Name].Id)
 		}
 		for _, md := range c.Metadata {
-			campaign.Metadata = append(campaign.Metadata, MetadataKeyValuePairInput(md))
+			campaign.Metadata = append(campaign.Metadata, dao.MetadataKeyValuePairInput(md))
 		}
 		campaigns.CampaignData = append(campaigns.CampaignData, campaign)
 	}
 	slog.Debug("Creating campaigns",
 		"count", len(campaigns.CampaignData),
 		"assessment_name", ad.Assessment.Name)
-	r, err := CreateCampaigns(ctx, client, campaigns)
+	r, err := dao.CreateCampaigns(ctx, client, campaigns)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
 			slog.Error("detailed error", "error", gqlObject)
@@ -527,16 +529,16 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	testCaseCount := 0
 	for _, c := range ad.Assessment.Campaigns {
 		// there could be a mix of test case types in a campaign, so add both types in
-		tc_with_template_name := CreateTestCaseAndTemplateMatchByNameInput{
+		tc_with_template_name := dao.CreateTestCaseAndTemplateMatchByNameInput{
 			Db:                   db,
 			CampaignId:           campaign_map[c.Name],
-			CreateTestCaseInputs: []CreateTestCaseDataWithTemplateNameInput{},
+			CreateTestCaseInputs: []dao.CreateTestCaseDataWithTemplateNameInput{},
 		}
 
-		tc_no_template := CreateTestCaseWithoutTemplateInput{
+		tc_no_template := dao.CreateTestCaseWithoutTemplateInput{
 			Db:           db,
 			CampaignId:   campaign_map[c.Name],
-			TestCaseData: []CreateTestCaseDataInput{},
+			TestCaseData: []dao.CreateTestCaseDataInput{},
 		}
 
 		// have to do this here (maybe make this an object in the future)
@@ -547,7 +549,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				slog.Error("could not find outcome for this test case", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name)
 				return fmt.Errorf("outcome %s not found", serialized_tc.Status)
 			}
-			testCaseData := CreateTestCaseDataInput{
+			testCaseData := dao.CreateTestCaseDataInput{
 				Name:             serialized_tc.Name,
 				Description:      serialized_tc.Description,
 				Phase:            serialized_tc.Phase.Name,
@@ -589,36 +591,36 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				testCaseData.Defenses = append(testCaseData.Defenses, defense.Name)
 			}
 			for _, detectingdefensetool := range serialized_tc.BlueTools {
-				testCaseData.DetectingDefenseTools = append(testCaseData.DetectingDefenseTools, DefenseToolInput{
+				testCaseData.DetectingDefenseTools = append(testCaseData.DetectingDefenseTools, dao.DefenseToolInput{
 					Name: detectingdefensetool.Name,
 				})
 			}
 			for _, md := range serialized_tc.Metadata {
-				testCaseData.RedTeamMetadata = append(testCaseData.RedTeamMetadata, MetadataKeyValuePairInput(md))
+				testCaseData.RedTeamMetadata = append(testCaseData.RedTeamMetadata, dao.MetadataKeyValuePairInput(md))
 			}
 			if serialized_tc.AutomationCmd != "" {
-				testCaseData.AttackAutomation = &AttackAutomationInput{
+				testCaseData.AttackAutomation = &dao.AttackAutomationInput{
 					Command:         serialized_tc.AutomationCmd,
 					Executor:        executorMap[serialized_tc.AutomationExecutor],
 					CleanupCommand:  serialized_tc.AutomationCleanup,
 					CleanupExecutor: executorMap[serialized_tc.AutomationCleanupExecutor],
 				}
 				for _, autoArg := range serialized_tc.AutomationArgument {
-					testCaseData.AttackAutomation.AttackVariables = append(testCaseData.AttackAutomation.AttackVariables, AttackAutomationVariable{
+					testCaseData.AttackAutomation.AttackVariables = append(testCaseData.AttackAutomation.AttackVariables, dao.AttackAutomationVariable{
 						InputName:  autoArg.ArgumentKey,
 						InputValue: autoArg.ArgumentValue,
-						Type:       AutomationVarType(strings.ToUpper(autoArg.ArgumentType)),
+						Type:       dao.AutomationVarType(strings.ToUpper(autoArg.ArgumentType)),
 					})
 				}
 			}
 			for _, redtool := range serialized_tc.RedTools {
-				testCaseData.RedTools = append(testCaseData.RedTools, RedToolInput{
+				testCaseData.RedTools = append(testCaseData.RedTools, dao.RedToolInput{
 					Name: redtool.Name,
 				})
 			}
 
 			for _, result := range serialized_tc.DefenseToolOutcomes {
-				testCaseData.DefenseToolOutcomes = append(testCaseData.DefenseToolOutcomes, DefenseToolOutcomeInput{
+				testCaseData.DefenseToolOutcomes = append(testCaseData.DefenseToolOutcomes, dao.DefenseToolOutcomeInput{
 					// take the stringifed integer from the serialized data, look up the tool name from the original data set
 					//		and then look up the id in the new instance
 					DefenseToolId: tool_map[ad.IdToolsMap[strconv.Itoa(result.DefenseToolId)].Name].Id,
@@ -630,8 +632,8 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				tc_no_template.TestCaseData = append(tc_no_template.TestCaseData, testCaseData)
 			} else {
 				// otherwise, create with template
-				tcd := CreateTestCaseDataWithTemplateNameInput{
-					TemplateNameDetail: TemplateNamePrefixInput{
+				tcd := dao.CreateTestCaseDataWithTemplateNameInput{
+					TemplateNameDetail: dao.TemplateNamePrefixInput{
 						TemplateName: instance_library_test_case[serialized_tc.LibraryTestCaseId].Name,
 					},
 					TestCaseData: testCaseData,
@@ -646,7 +648,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			"test-case-count-no-template", len(tc_no_template.TestCaseData),
 			"assessment_name", ad.Assessment.Name)
 		if len(tc_with_template_name.CreateTestCaseInputs) > 0 {
-			_, err := CreateTestCases(ctx, client, tc_with_template_name)
+			_, err := dao.CreateTestCases(ctx, client, tc_with_template_name)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
 					slog.Error("detailed error", "error", gqlObject)
@@ -656,7 +658,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			testCaseCount += len(tc_with_template_name.CreateTestCaseInputs)
 		}
 		if len(tc_no_template.TestCaseData) > 0 {
-			_, err := CreateTestCasesNoTemplate(ctx, client, tc_no_template)
+			_, err := dao.CreateTestCasesNoTemplate(ctx, client, tc_no_template)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
 					slog.Error("detailed error", "error", gqlObject)
@@ -672,9 +674,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 }
 
-func loadVatMetadata(md []GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair, vatMetadata *VatMetadata) []GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair {
+func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair, vatMetadata *VatMetadata) []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair {
 	for k, v := range vatMetadata.Serialize() {
-		md = append(md, GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair{
+		md = append(md, dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair{
 			Key:   k,
 			Value: v,
 		})
@@ -682,8 +684,8 @@ func loadVatMetadata(md []GetAllAssessmentsAssessmentsAssessmentConnectionNodesA
 	return md
 }
 
-func createTemplateData(template_test_case GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase) CreateTestCaseTemplateDataInput {
-	ttc := CreateTestCaseTemplateDataInput{
+func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase) dao.CreateTestCaseTemplateDataInput {
+	ttc := dao.CreateTestCaseTemplateDataInput{
 		LibraryTestCaseId: template_test_case.LibraryTestCaseId,
 		Name:              template_test_case.Name,
 		Description:       template_test_case.Description,
@@ -710,23 +712,23 @@ func createTemplateData(template_test_case GetLibraryTestCasesLibraryTestcasesBy
 		ttc.Defenses = append(ttc.Defenses, defense.Name)
 	}
 	for _, redtool := range template_test_case.RedTools {
-		ttc.RedTools = append(ttc.RedTools, RedToolInput{Name: redtool.Name})
+		ttc.RedTools = append(ttc.RedTools, dao.RedToolInput{Name: redtool.Name})
 	}
 	for _, md := range template_test_case.Metadata {
-		ttc.BlueTeamMetadata = append(ttc.BlueTeamMetadata, MetadataKeyValuePairInput(md))
+		ttc.BlueTeamMetadata = append(ttc.BlueTeamMetadata, dao.MetadataKeyValuePairInput(md))
 	}
 	if template_test_case.AutomationCmd != "" {
-		ttc.AttackAutomation = &AttackAutomationInput{
+		ttc.AttackAutomation = &dao.AttackAutomationInput{
 			Command:         template_test_case.AutomationCmd,
 			Executor:        executorMap[template_test_case.AutomationExecutor],
 			CleanupCommand:  template_test_case.AutomationCleanup,
 			CleanupExecutor: executorMap[template_test_case.AutomationCleanupExecutor],
 		}
 		for _, autoArg := range template_test_case.AutomationArgument {
-			ttc.AttackAutomation.AttackVariables = append(ttc.AttackAutomation.AttackVariables, AttackAutomationVariable{
+			ttc.AttackAutomation.AttackVariables = append(ttc.AttackAutomation.AttackVariables, dao.AttackAutomationVariable{
 				InputName:  autoArg.ArgumentKey,
 				InputValue: autoArg.ArgumentValue,
-				Type:       AutomationVarType(strings.ToUpper(autoArg.ArgumentType)),
+				Type:       dao.AutomationVarType(strings.ToUpper(autoArg.ArgumentType)),
 			})
 
 		}

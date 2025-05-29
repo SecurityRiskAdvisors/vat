@@ -67,7 +67,7 @@ clean-deps:
  clean: clean-deps
 	@echo "Cleaning up..."
 	@rm -rf $(BUILD_DIR)
-	@rm -f generated.go
+	@rm -f internal/dao/generated.go
 	@echo "Cleanup complete."
 	
 .PHONY: get-tools
@@ -98,6 +98,7 @@ update-deps: clean-deps get-tools
 .PHONY: generate
 generate:
 	@echo "Generating backend-code..."
+	@mkdir -p internal/dao
 	@go run github.com/Khan/genqlient
 	@echo "Completed code generation."
 

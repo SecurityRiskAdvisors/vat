@@ -3,4 +3,5 @@
 schema: graphql/schema/schema.gql
 operations:
 - graphql/operations/*.graphql
-generated: generated.go
+generated: internal/dao/generated.go
+package: dao

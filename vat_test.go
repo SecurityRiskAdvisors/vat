@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"sra/vat"
+	"sra/vat/internal/dao"
+	"sra/vat/internal/util"
 	"strconv"
 	"strings"
 	"testing"
@@ -62,9 +64,9 @@ func TestRestoreAssessment_MissingOrganizations(t *testing.T) {
 	// Return an empty organization list
 	mockClient := &MockGraphQLClient{
 		MockResponses: map[string]interface{}{
-			"FindOrganization": &vat.FindOrganizationResponse{
-				Organizations: vat.FindOrganizationOrganizationsOrganizationConnection{
-					Nodes: []vat.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization{},
+			"FindOrganization": &dao.FindOrganizationResponse{
+				Organizations: dao.FindOrganizationOrganizationsOrganizationConnection{
+					Nodes: []dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization{},
 				},
 			},
 		},
@@ -94,8 +96,8 @@ func TestRoundtripAssessmentData(t *testing.T) {
 	src_assessment := os.Getenv("SOURCE_ASSESSMENT")
 	dst_db := os.Getenv("DEST_DB")
 
-	s, _ := vat.SetupVectrClient(src_hostname, src_creds, true)
-	d, _ := vat.SetupVectrClient(dst_hostname, dst_creds, true)
+	s, _ := util.SetupVectrClient(src_hostname, src_creds, true)
+	d, _ := util.SetupVectrClient(dst_hostname, dst_creds, true)
 
 	o, err := vat.SaveAssessmentData(ctx, s, src_db, src_assessment)
 	if err != nil {

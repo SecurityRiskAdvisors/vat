@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"sra/vat"
+	"sra/vat/internal/util"
 
 	"filippo.io/age"
 	"github.com/spf13/cobra"
@@ -53,12 +54,12 @@ var saveCmd = &cobra.Command{
 		}
 
 		// Set up the VECTR client
-		client, vectrVersionHandler := vat.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), insecure)
+		client, vectrVersionHandler := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), insecure)
 
 		// get the VECTR version (side effect - check the creds as well)
 		vectrVersion, err := vectrVersionHandler.Get(ctx)
 		if err != nil {
-			if err == vat.ErrInvalidAuth {
+			if err == util.ErrInvalidAuth {
 				slog.Error("could not validate creds", "hostname", hostname, "error", err)
 				os.Exit(1)
 			}

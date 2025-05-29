@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"sra/vat/internal/dao"
 	"strconv"
 
 	"github.com/Khan/genqlient/graphql"
@@ -52,9 +53,9 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		ToolsMap:   map[string]GenericBlueTool{},
 		IdToolsMap: map[string]GenericBlueTool{},
 		OptionalFields: struct {
-			OrgMap map[string]GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+			OrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
 		}{
-			OrgMap: make(map[string]GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
+			OrgMap: make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 		},
 		Metadata: &VatMetadata{
 			SaveData: NewVatOpMetadata(ctx),
@@ -65,7 +66,7 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		slog.Warn("VECTR version mismatch, this version of vat was built for another version of VECTR", "saved-data-version", data.Metadata.SaveData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION, "vat-version", data.Metadata.SaveData.Version)
 	}
 
-	assessment, err := GetAllAssessments(ctx, client, db, assessment_name)
+	assessment, err := dao.GetAllAssessments(ctx, client, db, assessment_name)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
 			slog.Error("detailed error", "error", gqlObject)
@@ -97,16 +98,16 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		}
 	}
 
-	data.LibraryTestCases = map[string]GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase{}
+	data.LibraryTestCases = map[string]dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase{}
 
 	for _, c := range data.Assessment.Campaigns {
 		for _, o := range c.Organizations {
-			data.OptionalFields.OrgMap[o.Name] = GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization(o)
+			data.OptionalFields.OrgMap[o.Name] = dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization(o)
 		}
 		for _, tc := range c.TestCases {
 			if tc.LibraryTestCaseId != "" && tc.LibraryTestCaseId != "null" {
 				slog.Debug("Fetching library test case", "test_case_id", tc.LibraryTestCaseId)
-				data.LibraryTestCases[tc.LibraryTestCaseId] = GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase{}
+				data.LibraryTestCases[tc.LibraryTestCaseId] = dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase{}
 			} else {
 				slog.Warn("Test case missing a library id", "test-case-name", tc.Name)
 			}
@@ -115,7 +116,7 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 
 	ids := slices.Collect(maps.Keys(data.LibraryTestCases))
 	if len(ids) > 0 {
-		r, err := GetLibraryTestCases(ctx, client, ids)
+		r, err := dao.GetLibraryTestCases(ctx, client, ids)
 		if err != nil {
 			if gqlObject, ok := gqlErrParse(err); ok {
 				slog.Error("detailed error", "error", gqlObject)
@@ -130,7 +131,7 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 
 	slog.Info("Fetching defense tools",
 		"db", db)
-	btr, err := GetAllDefenseTools(ctx, client, db)
+	btr, err := dao.GetAllDefenseTools(ctx, client, db)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
 			slog.Error("detailed error", "error", gqlObject)

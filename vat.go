@@ -3,6 +3,7 @@ package vat
 import (
 	_ "embed"
 	"encoding/json"
+	"sra/vat/internal/dao"
 
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -20,15 +21,15 @@ type GenericBlueTool struct {
 }
 
 type AssessmentData struct {
-	Assessment         GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment
-	LibraryTestCases   map[string]GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase
+	Assessment         dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment
+	LibraryTestCases   map[string]dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase
 	TemplateAssessment string
 	Organizations      []string
 	ToolsMap           map[string]GenericBlueTool
 	IdToolsMap         map[string]GenericBlueTool
 	Metadata           *VatMetadata
 	OptionalFields     struct { // these fields will never be required on the restore side, so can be added to without changing the major version of the application
-		OrgMap map[string]GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+		OrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
 	}
 }
 

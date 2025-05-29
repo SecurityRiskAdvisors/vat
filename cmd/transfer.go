@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"sra/vat"
+	"sra/vat/internal/util"
 
 	"log/slog"
 
@@ -56,11 +57,11 @@ var transferCmd = &cobra.Command{
 		}
 
 		// Set up the source VECTR client
-		sourceClient, sourceVectrVersionHandler := vat.SetupVectrClient(sourceHostname, strings.TrimSpace(string(sourceCredentials)), insecure)
+		sourceClient, sourceVectrVersionHandler := util.SetupVectrClient(sourceHostname, strings.TrimSpace(string(sourceCredentials)), insecure)
 		// get the VECTR version (side effect - check the creds as well)
 		sourceVectrVersion, err := sourceVectrVersionHandler.Get(ctx)
 		if err != nil {
-			if err == vat.ErrInvalidAuth {
+			if err == util.ErrInvalidAuth {
 				slog.Error("could not validate source creds", "src-hostname", hostname, "error", err)
 				os.Exit(1)
 			}
@@ -71,11 +72,11 @@ var transferCmd = &cobra.Command{
 		sourceVersionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(sourceVectrVersion))
 
 		// Set up the target VECTR client
-		targetClient, targetVectrVersionHandler := vat.SetupVectrClient(targetHostname, strings.TrimSpace(string(targetCredentials)), insecure)
+		targetClient, targetVectrVersionHandler := util.SetupVectrClient(targetHostname, strings.TrimSpace(string(targetCredentials)), insecure)
 		// get the VECTR version (side effect - check the creds as well)
 		targetVectrVersion, err := targetVectrVersionHandler.Get(ctx)
 		if err != nil {
-			if err == vat.ErrInvalidAuth {
+			if err == util.ErrInvalidAuth {
 				slog.Error("could not validate creds", "hostname", hostname, "error", err)
 				os.Exit(1)
 			}
