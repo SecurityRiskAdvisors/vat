@@ -1,0 +1,424 @@
+query GetBatchAssessmentsForDb($db: String!) {
+  assessments(
+    db: $db
+  ) {
+    # @genqlient(typename: "GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment")
+    nodes {
+      id
+      name
+      description
+      organizations {
+        id
+        name
+        abbreviation
+        description
+        url
+        offset
+        createTime
+        updateTime
+      }
+      campaigns {
+        id
+        name
+        description
+        icon
+        organizations {
+          id
+          name
+          abbreviation
+          description
+          url
+          offset
+          createTime
+          updateTime
+        }
+        testCases {
+          id
+          name
+          description
+          method
+          libraryTestCaseId
+          mitreId
+          deprecated
+          organizations {
+            name
+          }
+          defensiveLayers {
+            name
+          }
+          outcomeNotes
+          outcome {
+            path
+          }
+          operatorGuidance
+          redTools {
+            name
+          }
+          blueTools {
+            id
+            name
+            defensiveLayers {
+              id
+              name
+              icon
+              description
+              template {
+                id
+                name
+                icon
+                description
+              }
+              offset
+              createTime
+              updateTime
+            }
+            defenseToolProduct {
+              id
+              name
+              ref
+              description
+              icon
+              defensiveLayers {
+                id
+                name
+                icon
+                description
+                template {
+                  id
+                  name
+                  icon
+                  description
+                  offset
+                  createTime
+                  updateTime
+                }
+                offset
+                createTime
+                updateTime
+              }
+              vendor {
+                id
+                name
+                icon
+                offset
+                createTime
+                updateTime
+              }
+              createTime
+              updateTime
+            }
+            template {
+              id
+              name
+            }
+            createTime
+            updateTime
+          }
+          metadata {
+            key
+            value
+          }
+          tags {
+            name
+          }
+          phase {
+            name
+            mitreTactics {
+              id
+              frameworkType
+              stixId
+              externalId
+              name
+              description
+            }
+            createTime
+            updateTime
+          }
+          automationCmd
+          automationExecutor
+          automationCleanup
+          automationCleanupExecutor
+          automationArgument {
+            argumentKey
+            argumentValue
+            argumentType
+          }
+          executionArtifactIdInfo {
+            id
+            variableName
+          }
+          attackLogProcedures {
+            id
+            name
+            envAttackLogId
+            attackLogEntry {
+              id
+              content
+              logLevel
+              logType
+              logTime
+              envAttackLogProcedureId
+              createTime
+              updateTime
+            }
+            attackLog {
+              id
+              fileName
+              targetType
+              src
+              environmentId
+              createTime
+              updateTime
+            }
+            procedureStart
+            procedureStop
+            createTime
+            updateTime
+          }
+          status
+          offset
+          targets {
+            name
+          }
+          sources {
+            name
+          }
+          detectionGuidance
+          preventionGuidance
+          detectionTime {
+            id
+            team
+            fieldName
+            fieldAction
+            type
+            manualDescription
+            createTime
+            updateTime
+          }
+          attackStop {
+            id
+            team
+            fieldName
+            fieldAction
+            type
+            manualDescription
+            createTime
+            updateTime
+          }
+          attackStart {
+            id
+            team
+            fieldName
+            fieldAction
+            type
+            manualDescription
+            createTime
+            updateTime
+          }
+          references
+          dataVer
+          createTime
+          updateTime
+          overrideOutcome
+          defenseToolOutcomes {
+            defenseToolId
+            outcomeId
+          }
+        }
+        metadata {
+          key
+          value
+        }
+        attackLogProcedures {
+          id
+          name
+          envAttackLogId
+          attackLogEntry {
+            id
+            content
+            logLevel
+            logType
+            logTime
+            envAttackLogProcedureId
+            createTime
+            updateTime
+          }
+          attackLog {
+            id
+            fileName
+            targetType
+            src
+            environmentId
+            createTime
+            updateTime
+          }
+          procedureStart
+          procedureStop
+          createTime
+          updateTime
+        }
+        tags {
+          name
+        }
+        offset
+        createTime
+        updateTime
+      }
+      assessmentIds
+      metadata {
+        key
+        value
+      }
+      tags {
+        id
+        name
+        sys
+        tagTypeId
+        tagColor
+        offset
+        createTime
+        updateTime
+      }
+      offset
+      killChain {
+        id
+        name
+        description
+        phases {
+          id
+          name
+          abbreviation
+          description
+          offset
+          mitreTactics {
+            id
+            frameworkType
+            stixId
+            externalId
+            name
+            description
+          }
+          createTime
+          updateTime
+        }
+        offset
+        createTime
+        updateTime
+      }
+      defaultTcDataVer
+      defenseTools {
+        id
+        name
+        description
+        active
+        defensiveLayers {
+          id
+          name
+          icon
+          description
+          template {
+            id
+            name
+            icon
+            description
+            template {
+              id
+              name
+              icon
+              description
+              template {
+                id
+                name
+                icon
+                description
+                template {
+                  id
+                  name
+                  icon
+                  description
+                  offset
+                  createTime
+                  updateTime
+                }
+                offset
+                createTime
+                updateTime
+              }
+              offset
+              createTime
+              updateTime
+            }
+            offset
+            createTime
+            updateTime
+          }
+          offset
+          createTime
+          updateTime
+        }
+        defenseToolProduct {
+          id
+          name
+          ref
+          description
+          icon
+          defensiveLayers {
+            id
+            name
+            icon
+            description
+            template {
+              id
+              name
+              icon
+              description
+              template {
+                id
+                name
+                icon
+                description
+                template {
+                  id
+                  name
+                  icon
+                  description
+                  offset
+                  createTime
+                  updateTime
+                }
+                offset
+                createTime
+                updateTime
+              }
+              offset
+              createTime
+              updateTime
+            }
+            offset
+            createTime
+            updateTime
+          }
+          vendor {
+            id
+            name
+            icon
+            offset
+            createTime
+            updateTime
+          }
+          createTime
+          updateTime
+        }
+        template {
+          id
+          name
+        }
+        createTime
+        updateTime
+      }
+      importTime
+      createTime
+      updateTime
+    }
+  }
+}
