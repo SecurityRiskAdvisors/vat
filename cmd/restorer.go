@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"sra/vat" // Replace with the actual package name for your vat API
+	"sra/vat"
 	"sra/vat/internal/util"
 
 	"log/slog"

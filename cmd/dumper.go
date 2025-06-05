@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -13,14 +14,13 @@ import (
 	"sra/vat"
 	"sra/vat/internal/util"
 
-	"log/slog"
-
 	"filippo.io/age"
 	"github.com/spf13/cobra"
 )
 
 var (
-	outputDir string
+	filterFile string
+	outputDir  string
 )
 
 // Create a dump subcommand
@@ -65,8 +65,32 @@ var dumpCmd = &cobra.Command{
 		slog.Info("validated credentials and fetched vectr version", "hostname", hostname, "vectr-version", vectrVersion)
 		versionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(vectrVersion))
 
-		// Call DumpInstance
-		dumpedData, err := vat.DumpInstance(versionContext, client)
+		// Set up the filter
+		var filter *util.Filter
+		if filterFile != "" {
+			file, err := os.Open(filterFile)
+			if err != nil {
+				slog.Error("Failed to open filter file", "error", err)
+				os.Exit(1)
+			}
+			defer file.Close()
+
+			filter, err = util.NewFilter(file)
+			if err != nil {
+				slog.Error("Failed to parse filter file", "error", err)
+				os.Exit(1)
+			}
+		} else {
+			r := strings.NewReader(`"*","*"` + "\n")
+			filter, err = util.NewFilter(r)
+			if err != nil {
+				slog.Error("Failed to parse filter file", "error", err)
+				os.Exit(1)
+			}
+		}
+
+		// Call DumpInstance with the filter
+		dumpedData, err := vat.DumpInstance(versionContext, client, filter)
 		if err != nil {
 			// if there is an assessment failure, then keep going, we'll handle it as the assessment level
 			if err != vat.ErrDumpAssessmentFailure || errors.Is(err, vat.ErrDumpAssessmentFailure) {
@@ -163,7 +187,7 @@ func init() {
 	dumpCmd.Flags().StringVar(&outputDir, "output-dir", "", "Directory to output the assessment files (required)")
 	dumpCmd.Flags().BoolVarP(&insecure, "insecure", "k", false, "Allow insecure connections to the instance (e.g., ignore TLS certificate errors)")
 
-	// Mark flags as required
+	dumpCmd.Flags().StringVar(&filterFile, "filter-file", "", "Path to the filter file (optional)")
 	dumpCmd.MarkFlagRequired("hostname")
 	dumpCmd.MarkFlagRequired("credentials-file")
 	dumpCmd.MarkFlagRequired("output-dir")

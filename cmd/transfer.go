@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -9,8 +10,6 @@ import (
 
 	"sra/vat"
 	"sra/vat/internal/util"
-
-	"log/slog"
 
 	"github.com/spf13/cobra"
 )
