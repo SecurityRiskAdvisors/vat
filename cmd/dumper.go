@@ -91,7 +91,7 @@ var dumpCmd = &cobra.Command{
 			}
 			subdir := filepath.Join(outputDir, entry.Db)
 			if err := os.MkdirAll(subdir, os.ModePerm); err != nil {
-				slog.Error("Failed to create the subdir", "error", err)
+				slog.Error("Failed to create the subdir", "error", err, "subdir", subdir)
 				os.Exit(1)
 			}
 
