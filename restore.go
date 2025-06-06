@@ -58,8 +58,7 @@ var outcomeStatusMap map[string]dao.TestCaseStatus = map[string]dao.TestCaseStat
 // organizations, tools, and templates exist in the target instance before
 // creating the assessment, campaigns, and test cases.
 //
-// # Parameters
-//
+// Parameters:
 //   - ctx: The context for managing request lifetimes and cancellations.
 //   - client: The GraphQL client for interacting with the VECTR instance.
 //   - db: The database name in the VECTR instance.
@@ -68,13 +67,11 @@ var outcomeStatusMap map[string]dao.TestCaseStatus = map[string]dao.TestCaseStat
 //   - optionalParams: Optional parameters to customize the restore process,
 //     such as overriding the assessment name or skipping template validation.
 //
-// # Returns
-//
+// Returns:
 //   - error: Returns an error if any step of the restore process fails. The error
 //     message provides details about the failure.
 //
-// # Workflow
-//
+// Workflow:
 // 1. **Validate Organizations**:
 //   - Checks if all organizations in the serialized data exist in the target
 //     VECTR instance.
@@ -115,43 +112,15 @@ var outcomeStatusMap map[string]dao.TestCaseStatus = map[string]dao.TestCaseStat
 //   - Handles defense tool outcomes by mapping serialized tool IDs to the
 //     target instance's tool IDs.
 //
-// # Error Handling
-//
+// Error Handling:
 // The function returns detailed errors for the following scenarios:
 //   - Missing organizations (`ErrOrgNotFound`).
 //   - Missing tools (`ErrMissingTools`).
 //   - Missing library assessments (`ErrMissingLibraryAssessment`).
-//   - A local asessment already exists (`ErrAssessmentAlreadyExists`).
+//   - A local assessment already exists (`ErrAssessmentAlreadyExists`).
 //   - Invalid or blank assessment name overrides (`ErrInvalidAssessmentName`).
 //   - GraphQL API errors during organization, tool, template, assessment,
 //     campaign, or test case creation.
-//
-// # Example Usage
-//
-//	ctx := context.Background()
-//	insecure_connection := false
-//	client := vat.SetupVectrClient("vectr.example.org", "<accesskeyid>:<secret>", insecure_connection)
-//
-//	db := "example_db"
-//	serializedData := &AssessmentData{
-//	    Organizations: []string{"Org1", "Org2"},
-//	    ToolsMap: map[string]GenericBlueTool{
-//	        "Tool1": {Name: "Tool1", ProductName: "Product1"},
-//	    },
-//	    TemplateAssessment: "Template1",
-//	    Assessment: GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment{
-//	        Name: "Example Assessment",
-//	        Description: "An example assessment",
-//	    },
-//	}
-//
-//	err := RestoreAssessment(ctx, client, db, serializedData, &RestoreOptionalParams{
-//	    AssessmentName: "Restored Assessment Name",
-//	})
-//
-//	if err != nil {
-//	    log.Fatalf("Failed to restore assessment: %v", err)
-//	}
 func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, optionalParams *RestoreOptionalParams) error {
 
 	// Step 1: Check if the organizations are in the new instance, error if not

@@ -27,6 +27,11 @@ type versionResponse struct {
 	} `json:"data"`
 }
 
+ // VectrVersionHandler manages HTTP requests to retrieve the current version of the VECTR application.
+ //
+ // Fields:
+ //   - httpClient: An HTTP client used to perform requests.
+ //   - versionPath: URL for the version check endpoint.
 type VectrVersionHandler struct {
 	httpClient  http.Client
 	versionPath url.URL
@@ -34,6 +39,21 @@ type VectrVersionHandler struct {
 
 var ErrInvalidAuth = errors.New("credentials invalid")
 
+ // Get retrieves the current version of the VECTR application.
+ //
+ // This function performs an HTTP GET request to the version check endpoint.
+ // It handles authentication and parses the response to extract the current version.
+ //
+ // Parameters:
+ //   - ctx: Context for managing request deadlines, cancellations, and other request-scoped values.
+ //
+ // Returns:
+ //   - A string representing the current version of the VECTR application.
+ //   - An error if the request or response parsing fails.
+ //
+ // Errors:
+ //   - Returns `ErrInvalidAuth` if the response status is unauthorized.
+ //   - Returns an error if the request cannot be completed or the response cannot be parsed.
 func (v *VectrVersionHandler) Get(ctx context.Context) (string, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.versionPath.String(), nil)
@@ -64,11 +84,29 @@ func (v *VectrVersionHandler) Get(ctx context.Context) (string, error) {
 	return parsedResponse.Data.CurrentVersion, nil
 }
 
+ // authTransport is a custom HTTP transport that adds authentication headers to requests.
+ //
+ // Fields:
+ //   - key: The authentication key used for VECTR API requests.
+ //   - wrapped: The underlying HTTP RoundTripper to be wrapped.
 type authTransport struct {
 	key     string
 	wrapped http.RoundTripper
 }
 
+ // RoundTrip executes a single HTTP transaction, adding authentication headers to the request.
+ //
+ // This method reads the request body, adds the authorization header, and logs request and response details if debugging is enabled.
+ //
+ // Parameters:
+ //   - req: The HTTP request to be executed.
+ //
+ // Returns:
+ //   - A pointer to an HTTP response.
+ //   - An error if the request execution or response reading fails.
+ //
+ // Errors:
+ //   - Returns an error if the request body cannot be read or the response body cannot be processed.
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Body != nil {
 		body, err := io.ReadAll(req.Body)
@@ -104,6 +142,19 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 }
 
+ // SetupVectrClient initializes a GraphQL client and a VectrVersionHandler for interacting with the VECTR API.
+ //
+ // This function configures the HTTP client with authentication and optional insecure connection settings.
+ // It sets up the URL for API requests and version checks.
+ //
+ // Parameters:
+ //   - hostname: The hostname of the VECTR instance.
+ //   - key: The authentication key for API requests.
+ //   - insecureConnect: A boolean indicating whether to ignore TLS certificate errors.
+ //
+ // Returns:
+ //   - A GraphQL client configured for API requests.
+ //   - A VectrVersionHandler for version checks.
 func SetupVectrClient(hostname, key string, insecureConnect bool) (graphql.Client, *VectrVersionHandler) {
 	slog.Info("Setting up connection to VECTR", "url", hostname)
 	transport := http.DefaultTransport.(*http.Transport).Clone()

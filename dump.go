@@ -22,6 +22,32 @@ type AssessmentDataEntry struct {
 var ErrDumpInstanceFailure = errors.New("error in dump an instance")
 var ErrDumpAssessmentFailure = errors.New("error in dumping an assessment")
 
+ // DumpInstance retrieves and processes assessment data from a VECTR instance.
+ //
+ // This function performs the following steps:
+ //   - Fetches all databases from the VECTR instance.
+ //   - Iterates over each database to check if it should be dumped based on the provided filter.
+ //   - Fetches assessments for each eligible database.
+ //   - Validates assessments against the filter criteria.
+ //   - Processes each assessment to populate the `AssessmentDataEntry` struct.
+ //
+ // Parameters:
+ //   - ctx: Context for managing request deadlines, cancellations, and other request-scoped values.
+ //   - client: GraphQL client used to make API calls.
+ //   - filter: Filter object to determine which databases and assessments should be dumped.
+ //
+ // Returns:
+ //   - A slice of `AssessmentDataEntry` structs containing:
+ //     - Database name.
+ //     - Assessment name.
+ //     - Serialized assessment data.
+ //     - Any error encountered during processing.
+ //   - An error if any step in the process fails.
+ //
+ // Errors:
+ //   - Returns `ErrDumpInstanceFailure` if fetching databases fails.
+ //   - Returns `ErrDumpAssessmentFailure` if processing any assessment fails.
+ //   - Returns a wrapped error with additional context if any GraphQL query fails.
 func DumpInstance(ctx context.Context, client graphql.Client, filter *util.Filter) ([]AssessmentDataEntry, error) {
 
 	dbs, err := dao.GetAllDatabases(ctx, client)
