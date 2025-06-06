@@ -2,6 +2,7 @@ package util
 
 import (
 	"encoding/csv"
+	"fmt"
 	"io"
 )
 
@@ -13,6 +14,8 @@ type Filter struct {
 func NewFilter(r io.Reader) (*Filter, error) {
 	reader := csv.NewReader(r)
 	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = 2
+	reader.LazyQuotes = false
 
 	// Initialize map to store database-assessment pairs
 	dbAssessmentMap := make(map[string]map[string]bool)
@@ -20,14 +23,11 @@ func NewFilter(r io.Reader) (*Filter, error) {
 	// Read all records from the CSV
 	records, err := reader.ReadAll()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create the filter: %w", err)
 	}
 
 	// Process each record
 	for _, record := range records {
-		if len(record) < 2 {
-			continue // Skip invalid records
-		}
 		db := record[0]
 		assessment := record[1]
 
