@@ -77,6 +77,22 @@ Dump all assessments from a VECTR instance:
 - `--filter-file`: Path to the filter file.
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
 
+#### Filter File Format
+The filter file is a CSV file used to specify which databases and assessments should be included in the dump process. Each line should contain a database name followed by an assessment name, separated by a comma. You can use a wildcard (`*`) to include all databases or assessments.
+
+Example:
+```
+"database1","assessment1"
+"database2","assessment2"
+"*","assessment3"
+"database3","*"
+```
+
+- The first line specifies that `assessment1` from `database1` should be dumped.
+- The second line specifies that `assessment2` from `database2` should be dumped.
+- The third line uses a wildcard to specify that `assessment3` should be dumped from all databases.
+- The fourth line uses a wildcard to specify that all assessments from `database3` should be dumped.
+
 ### Transfer Assessment Data
 
 Transfer an assessment from one VECTR instance directly to another:
