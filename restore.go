@@ -134,18 +134,14 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	if ad.Metadata != nil {
 		ad.Metadata.LoadData = NewVatOpMetadata(ctx)
-		if ad.Metadata.SaveData == nil {
-			ad.Metadata.SaveData = &VatOpMetadata{}
-		}
 	} else {
 		ad.Metadata = &VatMetadata{
 			LoadData: NewVatOpMetadata(ctx),
-			SaveData: &VatOpMetadata{},
 		}
 	}
 
 	if ad.Metadata.LoadData.VectrVersion != TAGGED_VECTR_VERSION {
-		slog.Warn("VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", ad.Metadata.LoadData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION, "vat-version", ad.Metadata.SaveData.Version)
+		slog.Warn("VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", ad.Metadata.LoadData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION)
 	}
 
 	if ad.Metadata.SaveData != nil && ad.Metadata.SaveData.VectrVersion != ad.Metadata.LoadData.VectrVersion {
