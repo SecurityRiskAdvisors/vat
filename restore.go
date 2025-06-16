@@ -244,30 +244,58 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	// If the user wants to ignore error, go ahead and import template test cases
 	// If no template name, then go ahead and add template test cases in
 	instance_library_test_case := make(map[string]dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase, len(ad.LibraryTestCases))
-	if !optionalParams.OverrideAssessmentTemplate && ad.TemplateAssessment != "" {
-		slog.Debug("Validating template assessment in instance",
-			"template_assessment", ad.TemplateAssessment,
-			"override_template", optionalParams.OverrideAssessmentTemplate)
-		prefix := ""
-		for _, md := range ad.Assessment.Metadata {
-			if md.Key == "prefix" {
-				prefix = md.Value + " - "
-				break
-			}
-		}
-		t, err := dao.FindLibraryAssessment(ctx, client, prefix+ad.TemplateAssessment)
-		if err != nil {
-			if gqlObject, ok := gqlErrParse(err); ok {
-				slog.Error("detailed error", "error", gqlObject)
-			}
-			return fmt.Errorf("could not fetch library assessment for %s: %w", ad.TemplateAssessment, err)
-		}
-		slog.Debug("checking for library test case content")
+	if optionalParams.OverrideAssessmentTemplate {
+		slog.Debug("adding template test cases directly")
 		input := dao.CreateTestCaseTemplateInput{
 			Overwrite:            true,
 			TestCaseTemplateData: []dao.CreateTestCaseTemplateDataInput{},
 		}
 
+		if len(ad.LibraryTestCases) > 0 {
+			for _, template_test_case := range ad.LibraryTestCases {
+				slog.Debug("library test case", "name", template_test_case.Name, "template_id", template_test_case.LibraryTestCaseId)
+				input.TestCaseTemplateData = append(input.TestCaseTemplateData, createTemplateData(template_test_case))
+				instance_library_test_case[template_test_case.LibraryTestCaseId] = template_test_case
+			}
+
+			_, err := dao.CreateTemplateTestCases(ctx, client, input)
+			if err != nil {
+				if gqlObject, ok := gqlErrParse(err); ok {
+					slog.Error("full gql error", "error", gqlObject)
+				}
+
+				return fmt.Errorf("could not write template test cases: %w", err)
+			}
+			slog.Info("inserted all library test cases", "total", len(input.TestCaseTemplateData))
+		} else {
+			slog.Info("No library test cases found", "assessment-name", ad.Assessment.Name)
+		}
+
+	} else {
+		if ad.TemplateAssessment != "" {
+			slog.Debug("Validating template assessment in instance",
+				"template_assessment", ad.TemplateAssessment,
+				"override_template", optionalParams.OverrideAssessmentTemplate)
+			prefix := ""
+			for _, md := range ad.Assessment.Metadata {
+				if md.Key == "prefix" {
+					prefix = md.Value + " - "
+					break
+				}
+			}
+			t, err := dao.FindLibraryAssessment(ctx, client, prefix+ad.TemplateAssessment)
+			if err != nil {
+				if gqlObject, ok := gqlErrParse(err); ok {
+					slog.Error("detailed error", "error", gqlObject)
+				}
+				return fmt.Errorf("could not fetch library assessment for %s: %w", ad.TemplateAssessment, err)
+			}
+			// if the defined library assessment does not exist, check to see if we have all library test cases
+			if len(t.LibraryAssessments.Nodes) == 0 {
+				slog.Warn("Could not find library assessment, but checking all the test cases.", "template_assessment", ad.TemplateAssessment)
+			}
+		}
+		// now let's check the actual data
 		ids := slices.Collect(maps.Keys(ad.LibraryTestCases))
 		if len(ids) > 0 {
 			missing_ids := []string{}
@@ -319,41 +347,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				missing_ids = append(missing_ids, mids...)
 			}
 			if len(missing_ids) > 0 {
-				// if there are missing ids, match the missing ones to the serialized ids
-				for _, id := range missing_ids {
-					input.TestCaseTemplateData = append(input.TestCaseTemplateData, createTemplateData(ad.LibraryTestCases[id]))
-					instance_library_test_case[id] = ad.LibraryTestCases[id]
-				}
+				slog.Error("could not find all the ids in the instance", "missing-ids", missing_ids)
+				return fmt.Errorf("could not find all the ids in the instance, override templates to insert, missing id count: %d", len(missing_ids))
 
-				// create a list of ids to fetch from the instance
-				ids_to_fetch := make([]string, 0, len(ad.LibraryTestCases)-len(missing_ids))
-
-				for id, _ := range ad.LibraryTestCases {
-					if _, ok := instance_library_test_case[id]; !ok {
-						ids_to_fetch = append(ids_to_fetch, id)
-					}
-				}
-				// this should always be greater than 0 since there are missing ids
-				// but doesn't hurt to check
-				if len(ids_to_fetch) > 0 {
-					r, err = dao.GetLibraryTestCases(ctx, client, ids_to_fetch)
-					if err != nil {
-						if gqlObject, ok := gqlErrParse(err); ok {
-							slog.Error("detailed error", "error", gqlObject)
-						}
-						// this time, actually just bail out. this should have been a clean insert
-						return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
-					}
-					// add in the ones that were found
-					for _, ltc := range r.LibraryTestcasesByIds.Nodes {
-						instance_library_test_case[ltc.LibraryTestCaseId] = ltc
-					}
-				} else {
-					slog.Error("Data issue, we have missing ids, but could not find them in the map, this is a bug",
-						"missing-ids", missing_ids,
-						"serialized-ids", slices.Collect(maps.Keys(ad.LibraryTestCases)))
-					return fmt.Errorf("could not process data, fatal error")
-				}
 			} else {
 				// this means everything came back
 				for _, iltc := range r.LibraryTestcasesByIds.Nodes {
@@ -362,59 +358,8 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			}
 
 		}
-		// if the defined library assessment does not exist, check to see if we have all library test cases
-		if len(t.LibraryAssessments.Nodes) == 0 {
-			if len(input.TestCaseTemplateData) > 0 {
-				return fmt.Errorf("import %s: %w", ad.TemplateAssessment, ErrMissingLibraryAssessment)
-			} else {
-				slog.Warn("Could not find library assessment, but found all test cases.", "template_assessment", ad.TemplateAssessment)
-			}
-		}
-
-		// if the defined library assessment does exist, but has missing test cases, add them in
-		if len(input.TestCaseTemplateData) > 0 {
-			slog.Info("Some test cases are mssing for the assessment, creating them",
-				"library-assessment", prefix+ad.TemplateAssessment,
-				"template-test-cases", input.TestCaseTemplateData,
-			)
-			_, err := dao.CreateTemplateTestCases(ctx, client, input)
-			if err != nil {
-				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.Error("detailed error", "error", gqlObject)
-				}
-				return fmt.Errorf("could not write extra template test cases, err: %w", err)
-			}
-		}
-	} else {
-		slog.Debug("adding template test cases directly")
-		// If we are ignoring existing templates or no name was set
-		input := dao.CreateTestCaseTemplateInput{
-			Overwrite:            true,
-			TestCaseTemplateData: []dao.CreateTestCaseTemplateDataInput{},
-		}
-
-		if len(ad.LibraryTestCases) > 0 {
-			for _, template_test_case := range ad.LibraryTestCases {
-				slog.Debug("library test case", "name", template_test_case.Name, "template_id", template_test_case.LibraryTestCaseId)
-				input.TestCaseTemplateData = append(input.TestCaseTemplateData, createTemplateData(template_test_case))
-				instance_library_test_case[template_test_case.LibraryTestCaseId] = template_test_case
-			}
-
-			_, err := dao.CreateTemplateTestCases(ctx, client, input)
-			if err != nil {
-				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.Error("full gql error", "error", gqlObject)
-				}
-
-				return fmt.Errorf("could not write template test cases: %w", err)
-			}
-			slog.Info("inserted all library test cases", "total", len(input.TestCaseTemplateData))
-		} else {
-			slog.Info("No library test cases found", "assessment-name", ad.Assessment.Name)
-		}
 
 	}
-
 	// Step 4: Create the assessment
 	slog.Info("Creating assessment",
 		"assessment_name", ad.Assessment.Name)
