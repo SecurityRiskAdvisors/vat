@@ -30,6 +30,11 @@ func (v *VatOpMetadata) serialize() map[string]string {
 	r["version"] = v.Version
 	r["date"] = v.Date.Format(time.RFC3339)
 	r["vectr-version"] = v.VectrVersion
+	for k, _ := range r {
+		if r[k] == "" {
+			r[k] = "none_found"
+		}
+	}
 	return r
 }
 
@@ -69,9 +74,9 @@ Parameters:
 
 Returns:
   - A pointer to a VatOpMetadata struct containing:
-    - Version: The version extracted from the context.
-    - Date: The current date and time.
-    - VectrVersion: The VECTR version extracted from the context.
+  - Version: The version extracted from the context.
+  - Date: The current date and time.
+  - VectrVersion: The VECTR version extracted from the context.
 */
 func NewVatOpMetadata(ctx context.Context) *VatOpMetadata {
 	var version string = "none_found"
