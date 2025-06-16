@@ -7,7 +7,7 @@ require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.8.1
-	github.com/vektah/gqlparser/v2 v2.5.27
+	github.com/vektah/gqlparser/v2 v2.5.28
 	pgregory.net/rapid v1.2.0
 )
 
