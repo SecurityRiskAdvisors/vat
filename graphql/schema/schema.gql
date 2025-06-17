@@ -1,5 +1,7 @@
 directive @fetch(from: String!) on FIELD_DEFINITION
 
+directive @feature(key: String!) on FIELD_DEFINITION
+
 """
 Indicates an Input Object is a OneOf Input Object.
 """
@@ -744,6 +746,10 @@ ISO 8601 date and time format
 """
 scalar DateTime
 
+input DefenseLayerFilter {
+  name: ListOperator_String
+}
+
 input DefenseToolInput {
   name: String!
   vendor: String
@@ -1043,6 +1049,10 @@ type KillChainConnection {
   Information to aid in pagination
   """
   pageInfo: PageInfo
+}
+
+input ListOperator_String {
+  includes: [String!]
 }
 
 input MetadataFilter {
@@ -2317,6 +2327,7 @@ type TestCase {
     )
   libraryTestCaseId: String
   mitreId: String
+  techniqueName: String
   deprecated: Boolean
   organizations: [Organization!]
   defensiveLayers: [DefensiveLayer]
@@ -2340,6 +2351,7 @@ type TestCase {
     )
   tags: [Tag]
   phase: Phase
+  associatedLibraryCampaigns: [Campaign]
   automationCmd: String
   automationExecutor: String
   automationCleanup: String
@@ -2387,6 +2399,12 @@ input TestCaseFilter {
   mitreId: StringOperator
   metadata: MetadataFilter
   tags: TagFilter
+  phase: StringOperator
+  organization: StringOperator
+  techniqueName: StringOperator
+  isAutomationAvailable: Boolean
+  privilegesRequired: Boolean
+  defenseLayers: DefenseLayerFilter
 }
 
 type TestCaseMutations {
@@ -2442,6 +2460,11 @@ enum TestCaseSortField {
   Order by MITRE ID
   """
   MITRE_ID
+
+  """
+  Order by TECHNIQUE NAME
+  """
+  TECHNIQUE_NAME
 }
 
 input TestCaseSortOrder {
