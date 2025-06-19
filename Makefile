@@ -11,7 +11,7 @@
 
  # Default target
  .PHONY: all
- all: clean get-tools deps generate build
+ all: clean get-tools deps generate serializedschemavalidator build
  
  # Target to create a release for the build
  .PHONY: release
@@ -22,7 +22,7 @@
 # run update-deps before release checks to make sure that there are no module updates
 # that are needed. If so, the release checks will block the release branch creation
  .PHONY: release-branch
- release-branch: clean update-deps generate vulncheck test release-checks
+ release-branch: clean update-deps generate serializedschemavalidator vulncheck test release-checks
 	@if [ -z "$(TAG)" ]; then \
 		echo "Error: TAG parameter is required. Usage: make tag TAG=<tag_name>"; \
 		git describe --tags --always --dirty; \
@@ -142,9 +142,15 @@ build-multiarch:
 
 .PHONY: vulncheck
 vulncheck:
-	@echo "Running tests..."
+	@echo "Running vulncheck..."
 	@go run golang.org/x/vuln/cmd/govulncheck ./...
 	@echo "No vulns found."
+	
+.PHONY: serializedschemavalidator
+serializedschemavalidator:
+	@echo "Validating serialized output schema..."
+	@go run _buildcode/objectvalidate/main.go > serializedschemahash.txt
+	@echo "Completed, checked the file diff in git to validate no changes."
 
 .PHONY: create-draft-release
 create-draft-release:

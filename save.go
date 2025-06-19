@@ -79,31 +79,31 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 	return saveAssessment(ctx, client, assessment.Assessments.Nodes[0], data, db)
 }
 
- // saveAssessment processes the assessment data and fetches associated library test cases and defense tools.
- //
- // This function performs the following steps:
- //   - Processes the assessment object to populate the `AssessmentData` struct.
- //   - Extracts library test cases using their IDs and fetches them via the `GetLibraryTestCases` function.
- //   - Fetches all defense tools for the given database using the `GetAllDefenseTools` function.
- //   - Populates the `ToolsMap` and `IdToolsMap` with defense tool information.
- //
- // Parameters:
- //   - ctx: The context for managing request deadlines, cancellations, and other request-scoped values.
- //   - client: The GraphQL client used to make API calls.
- //   - assessment: The assessment object containing campaigns and test cases.
- //   - data: The `AssessmentData` struct to be populated.
- //   - db: The name of the database to query.
- //
- // Returns:
- //   - A pointer to an `AssessmentData` struct containing:
- //     - The processed assessment.
- //     - A collection of library test cases associated with the assessment.
- //     - A collection of defense tools.
- //     - The template assessment name (if available in the metadata).
- //   - An error if any step in the process fails.
- //
- // Errors:
- //   - Returns a wrapped error with additional context if any GraphQL query fails.
+// saveAssessment processes the assessment data and fetches associated library test cases and defense tools.
+//
+// This function performs the following steps:
+//   - Processes the assessment object to populate the `AssessmentData` struct.
+//   - Extracts library test cases using their IDs and fetches them via the `GetLibraryTestCases` function.
+//   - Fetches all defense tools for the given database using the `GetAllDefenseTools` function.
+//   - Populates the `ToolsMap` and `IdToolsMap` with defense tool information.
+//
+// Parameters:
+//   - ctx: The context for managing request deadlines, cancellations, and other request-scoped values.
+//   - client: The GraphQL client used to make API calls.
+//   - assessment: The assessment object containing campaigns and test cases.
+//   - data: The `AssessmentData` struct to be populated.
+//   - db: The name of the database to query.
+//
+// Returns:
+//   - A pointer to an `AssessmentData` struct containing:
+//   - The processed assessment.
+//   - A collection of library test cases associated with the assessment.
+//   - A collection of defense tools.
+//   - The template assessment name (if available in the metadata).
+//   - An error if any step in the process fails.
+//
+// Errors:
+//   - Returns a wrapped error with additional context if any GraphQL query fails.
 func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment, data *AssessmentData, db string) (*AssessmentData, error) {
 
 	data.Assessment = assessment
