@@ -243,7 +243,6 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	// Step 3: Check if there is a template name in the seralized data, if so check in the instance (error if not)
 	// If the user wants to ignore error, go ahead and import template test cases
 	// If no template name, then go ahead and add template test cases in
-	instance_library_test_case := make(map[string]dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase, len(ad.LibraryTestCases))
 	if optionalParams.OverrideAssessmentTemplate {
 		slog.Debug("adding template test cases directly")
 		input := dao.CreateTestCaseTemplateInput{
@@ -255,7 +254,6 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			for _, template_test_case := range ad.LibraryTestCases {
 				slog.Debug("library test case", "name", template_test_case.Name, "template_id", template_test_case.LibraryTestCaseId)
 				input.TestCaseTemplateData = append(input.TestCaseTemplateData, createTemplateData(template_test_case))
-				instance_library_test_case[template_test_case.LibraryTestCaseId] = template_test_case
 			}
 
 			_, err := dao.CreateTemplateTestCases(ctx, client, input)
@@ -301,7 +299,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			missing_ids := []string{}
 			// first time, we never really need to check the response, if the missing ids remain none,
 			// we don't need to do anything
-			r, err := dao.GetLibraryTestCases(ctx, client, ids)
+			_, err := dao.GetLibraryTestCases(ctx, client, ids)
 			if err != nil {
 				gqlerrlist, ok := err.(gqlerror.List)
 				if !ok {
@@ -350,11 +348,6 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				slog.Error("could not find all the ids in the instance", "missing-ids", missing_ids)
 				return fmt.Errorf("could not find all the ids in the instance, override templates to insert, missing id count: %d", len(missing_ids))
 
-			} else {
-				// this means everything came back
-				for _, iltc := range r.LibraryTestcasesByIds.Nodes {
-					instance_library_test_case[iltc.LibraryTestCaseId] = iltc
-				}
 			}
 
 		}
@@ -439,10 +432,10 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	testCaseCount := 0
 	for _, c := range ad.Assessment.Campaigns {
 		// there could be a mix of test case types in a campaign, so add both types in
-		tc_with_template_name := dao.CreateTestCaseAndTemplateMatchByNameInput{
+		tc_with_library := dao.CreateTestCaseMatchByLibraryIdInput{
 			Db:                   db,
 			CampaignId:           campaign_map[c.Name],
-			CreateTestCaseInputs: []dao.CreateTestCaseDataWithTemplateNameInput{},
+			CreateTestCaseInputs: []dao.CreateTestCaseDataWithLibraryIdInput{},
 		}
 
 		tc_no_template := dao.CreateTestCaseWithoutTemplateInput{
@@ -542,30 +535,29 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				tc_no_template.TestCaseData = append(tc_no_template.TestCaseData, testCaseData)
 			} else {
 				// otherwise, create with template
-				tcd := dao.CreateTestCaseDataWithTemplateNameInput{
-					TemplateNameDetail: dao.TemplateNamePrefixInput{
-						TemplateName: instance_library_test_case[serialized_tc.LibraryTestCaseId].Name,
-					},
-					TestCaseData: testCaseData,
+				tcd := dao.CreateTestCaseDataWithLibraryIdInput{
+					LibraryTestCaseId:    serialized_tc.LibraryTestCaseId,
+					CreateNewIfNotExists: false,
+					TestCaseData:         testCaseData,
 				}
-				tc_with_template_name.CreateTestCaseInputs = append(tc_with_template_name.CreateTestCaseInputs, tcd)
+				tc_with_library.CreateTestCaseInputs = append(tc_with_library.CreateTestCaseInputs, tcd)
 
 			}
 		}
 		slog.Debug("Creating test cases",
 			"campaign_name", c.Name,
-			"test_case_count", len(tc_with_template_name.CreateTestCaseInputs),
+			"test_case_count", len(tc_with_library.CreateTestCaseInputs),
 			"test-case-count-no-template", len(tc_no_template.TestCaseData),
 			"assessment_name", ad.Assessment.Name)
-		if len(tc_with_template_name.CreateTestCaseInputs) > 0 {
-			_, err := dao.CreateTestCases(ctx, client, tc_with_template_name)
+		if len(tc_with_library.CreateTestCaseInputs) > 0 {
+			_, err := dao.CreateTestCasesByLibraryId(ctx, client, tc_with_library)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
 					slog.Error("detailed error", "error", gqlObject)
 				}
 				return fmt.Errorf("could not write test cases for %s: %w", ad.Assessment.Name, err)
 			}
-			testCaseCount += len(tc_with_template_name.CreateTestCaseInputs)
+			testCaseCount += len(tc_with_library.CreateTestCaseInputs)
 		}
 		if len(tc_no_template.TestCaseData) > 0 {
 			_, err := dao.CreateTestCasesNoTemplate(ctx, client, tc_no_template)
@@ -575,7 +567,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				}
 				return fmt.Errorf("could not write test cases for %s: %w", ad.Assessment.Name, err)
 			}
-			testCaseCount += len(tc_with_template_name.CreateTestCaseInputs)
+			testCaseCount += len(tc_with_library.CreateTestCaseInputs)
 		}
 	}
 	slog.Info("Test cases created", "assessment-name", ad.Assessment.Name, "test-case-count", testCaseCount)
