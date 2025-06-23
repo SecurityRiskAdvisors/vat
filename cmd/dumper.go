@@ -134,8 +134,8 @@ var dumpCmd = &cobra.Command{
 			}
 
 			// Create the output file paths
-			outputFilePath := filepath.Join(subdir, entry.AssessmentName+".json.gz")
-			passphraseFilePath := filepath.Join(subdir, entry.AssessmentName+"_passphrase.txt")
+			outputFilePath := filepath.Join(subdir, entry.AssessmentName+".age")
+			passphraseFilePath := outputFilePath + ".passphrase"
 
 			// Write the passphrase to a file
 			if err := os.WriteFile(passphraseFilePath, []byte(passphrase), 0600); err != nil {
