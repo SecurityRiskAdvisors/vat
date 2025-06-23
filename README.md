@@ -13,8 +13,8 @@ You can download the latest binary from the [release page](https://github.com/Se
 ### Generating VECTR Credentials
 
 * Follow the instructions [here](https://docs.vectr.io/API-Key/) to create a VECTR API key, depending on the operation you will need specific types of access:
-  * `save operations`: at least `read` from the relevant DB and the Library.
-  * `restore operations`: at least `write` on the relevant DB and the Library.
+  * `save operations`: at least `read` from the relevant environment and the Library.
+  * `restore operations`: at least `write` on the relevant environment and the Library.
 * Create a credentials file:
   * Suggest using `install -m 0400 /dev/null /path/to/file`.
 * Add the VECTR credentials into the file in the form of: `<key_id>:<key_secret>`.
@@ -25,12 +25,12 @@ Save assessment data from a VECTR instance to an encrypted, compressed file:
 
 #### Minimal Example
 ```bash
-./vat save --hostname <vectr-hostname> --db <database-name> --assessment-name <assessment-name> --vectr-creds-file <path-to-vectr-creds-file> --output-file <path-to-output-file>
+./vat save --hostname <vectr-hostname> --env <environment-name> --assessment-name <assessment-name> --vectr-creds-file <path-to-vectr-creds-file> --output-file <path-to-output-file>
 ```
 
 #### Required Options
 - `--hostname`: Hostname of the VECTR instance.
-- `--db`: Database name in the VECTR instance.
+- `--env`: Environment name in the VECTR instance.
 - `--assessment-name`: Name of the assessment to save.
 - `--vectr-creds-file`: Path to the VECTR credentials file.
 - `--output-file`: Path to the output file.
@@ -44,12 +44,12 @@ Restore assessment data to a VECTR instance from an encrypted, compressed file:
 
 #### Minimal Example
 ```bash
-./vat restore --hostname <vectr-hostname> --db <database-name> --vectr-creds-file <path-to-vectr-creds-file> --input-file <path-to-input-file> --passphrase-file <path-to-passphrase-file>
+./vat restore --hostname <vectr-hostname> --env <environment-name> --vectr-creds-file <path-to-vectr-creds-file> --input-file <path-to-input-file> --passphrase-file <path-to-passphrase-file>
 ```
 
 #### Required Options
 - `--hostname`: Hostname of the VECTR instance.
-- `--db`: Database name in the VECTR instance.
+- `--env`: Environment name in the VECTR instance.
 - `--vectr-creds-file`: Path to the credentials file.
 - `--input-file`: Path to the encrypted input file.
 
@@ -78,20 +78,20 @@ Dump all assessments from a VECTR instance:
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
 
 #### Filter File Format
-The filter file is a CSV file used to specify which databases and assessments should be included in the dump process. Each line should contain a database name followed by an assessment name, separated by a comma. You can use a wildcard (`*`) to include all databases or assessments.
+The filter file is a CSV file used to specify which environments and assessments should be included in the dump process. Each line should contain an environment name followed by an assessment name, separated by a comma. You can use a wildcard (`*`) to include all environments or assessments.
 
 Example:
 ```
-"database1","assessment1"
-"database2","assessment2"
+"env1","assessment1"
+"env2","assessment2"
 "*","assessment3"
-"database3","*"
+"env3","*"
 ```
 
-- The first line specifies that `assessment1` from `database1` should be dumped.
-- The second line specifies that `assessment2` from `database2` should be dumped.
-- The third line uses a wildcard to specify that `assessment3` should be dumped from all databases.
-- The fourth line uses a wildcard to specify that all assessments from `database3` should be dumped.
+- The first line specifies that `assessment1` from `env1` should be dumped.
+- The second line specifies that `assessment2` from `env2` should be dumped.
+- The third line uses a wildcard to specify that `assessment3` should be dumped from all environments.
+- The fourth line uses a wildcard to specify that all assessments from `env3` should be dumped.
 
 ### Transfer Assessment Data
 
@@ -99,16 +99,16 @@ Transfer an assessment from one VECTR instance directly to another:
 
 #### Minimal Example
 ```bash
-./vat transfer --source-hostname <source-vectr-hostname> --source-vectr-creds-file <path-to-source-credentials-file> --source-db <source-database-name> --target-hostname <target-vectr-hostname> --target-vectr-creds-file <path-to-target-credentials-file> --target-db <target-database-name> --assessment-name <assessment-name>
+./vat transfer --source-hostname <source-vectr-hostname> --source-vectr-creds-file <path-to-source-credentials-file> --source-env <source-environment-name> --target-hostname <target-vectr-hostname> --target-vectr-creds-file <path-to-target-credentials-file> --target-env <target-environment-name> --assessment-name <assessment-name>
 ```
 
 #### Required Options
 - `--source-hostname`: Hostname of the source VECTR instance.
 - `--source-vectr-creds-file`: Path to the credentials file for the source instance.
-- `--source-db`: Database name in the source VECTR instance.
+- `--source-env`: Environment name in the source VECTR instance.
 - `--target-hostname`: Hostname of the target VECTR instance.
 - `--target-vectr-creds-file`: Path to the credentials file for the target instance.
-- `--target-db`: Database name in the target VECTR instance.
+- `--target-env`: Environment name in the target VECTR instance.
 - `--assessment-name`: Name of the assessment to transfer.
 
 #### Optional Options

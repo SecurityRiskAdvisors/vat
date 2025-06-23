@@ -132,13 +132,14 @@ func init() {
 	// Add flags to the save command
 	saveCmd.Flags().StringVar(&hostname, "hostname", "", "Hostname of the VECTR instance (required)")
 	saveCmd.Flags().StringVar(&db, "db", "", "Database to pull the assessment from (required)")
+	saveCmd.Flags().StringVar(&db, "env", "", "Alias for --db")
 	saveCmd.Flags().StringVar(&assessmentName, "assessment-name", "", "Name of the assessment to save (required)")
 	saveCmd.Flags().StringVar(&credentialsFile, "vectr-creds-file", "", "Path to the VECTR credentials file (required)")
 	saveCmd.Flags().StringVar(&outputFile, "output-file", "", "Path to the output file (required)")
 	saveCmd.Flags().BoolVarP(&insecure, "insecure", "k", false, "Allow insecure connections to the instance (e.g., ignore TLS certificate errors)")
 
 	// Mark flags as required
-	saveCmd.MarkFlagRequired("db")
+	saveCmd.MarkFlagsOneRequired("db", "env")
 	saveCmd.MarkFlagRequired("assessment-name")
 	saveCmd.MarkFlagRequired("hostname")
 	saveCmd.MarkFlagRequired("credentials-file")

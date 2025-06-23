@@ -113,9 +113,11 @@ func init() {
 	transferCmd.Flags().StringVar(&sourceHostname, "source-hostname", "", "Hostname of the source VECTR instance (required)")
 	transferCmd.Flags().StringVar(&sourceCredentialsFile, "source-vectr-creds-file", "", "Path to the source credentials file (required)")
 	transferCmd.Flags().StringVar(&sourceDB, "source-db", "", "Database name in the source VECTR instance (required)")
+	transferCmd.Flags().StringVar(&sourceDB, "source-env", "", "Alias for --source-db")
 	transferCmd.Flags().StringVar(&targetHostname, "target-hostname", "", "Hostname of the target VECTR instance (required)")
 	transferCmd.Flags().StringVar(&targetCredentialsFile, "target-vectr-creds-file", "", "Path to the target credentials file (required)")
 	transferCmd.Flags().StringVar(&targetDB, "target-db", "", "Database name in the target VECTR instance (required)")
+	transferCmd.Flags().StringVar(&targetDB, "target-env", "", "Alias for --target-db")
 	transferCmd.Flags().StringVar(&assessmentName, "assessment-name", "", "Name of the assessment to transfer (required)")
 	transferCmd.Flags().StringVar(&targetAssessmentName, "target-assessment-name", "", "The assessment name to set in the new instance")
 	transferCmd.Flags().BoolVarP(&insecure, "insecure", "k", false, "Allow insecure connections to the instances (e.g., ignore TLS certificate errors)")
@@ -124,9 +126,9 @@ func init() {
 	// Mark flags as required
 	transferCmd.MarkFlagRequired("source-hostname")
 	transferCmd.MarkFlagRequired("source-credentials-file")
-	transferCmd.MarkFlagRequired("source-db")
+	transferCmd.MarkFlagsOneRequired("source-db", "source-env")
 	transferCmd.MarkFlagRequired("target-hostname")
 	transferCmd.MarkFlagRequired("target-credentials-file")
-	transferCmd.MarkFlagRequired("target-db")
+	transferCmd.MarkFlagsOneRequired("target-db", "target-env")
 	transferCmd.MarkFlagRequired("assessment-name")
 }

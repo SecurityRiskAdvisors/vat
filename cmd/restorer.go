@@ -128,6 +128,7 @@ var restoreCmd = &cobra.Command{
 func init() {
 	// Add flags to the restore command
 	restoreCmd.Flags().StringVar(&db, "db", "", "Database to restore the assessment to (required)")
+	restoreCmd.Flags().StringVar(&db, "env", "", "Alias for --db")
 	restoreCmd.Flags().StringVar(&hostname, "hostname", "", "Hostname of the VECTR instance (required)")
 	restoreCmd.Flags().StringVar(&credentialsFile, "vectr-creds-file", "", "Path to the credentials file (required)")
 	restoreCmd.Flags().StringVar(&inputFile, "input-file", "", "Path to the encrypted input file (required)")
@@ -137,7 +138,7 @@ func init() {
 	restoreCmd.Flags().BoolVar(&overrideAssessmentTemplate, "override-template-assessment", false, "Override any set template name in the serialized data and load template test cases anyway")
 
 	// Mark flags as required
-	restoreCmd.MarkFlagRequired("db")
+	restoreCmd.MarkFlagsOneRequired("db", "env")
 	restoreCmd.MarkFlagRequired("hostname")
 	restoreCmd.MarkFlagRequired("credentials-file")
 	restoreCmd.MarkFlagRequired("input-file")
