@@ -555,7 +555,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				if gqlObject, ok := gqlErrParse(err); ok {
 					slog.Error("detailed error", "error", gqlObject)
 				}
-				return fmt.Errorf("could not write test cases for %s: %w", ad.Assessment.Name, err)
+				return fmt.Errorf("could not write test cases for %s, campaign: %s; check vectr version: %w", ad.Assessment.Name, c.Name, err)
 			}
 			testCaseCount += len(tc_with_library.CreateTestCaseInputs)
 		}
