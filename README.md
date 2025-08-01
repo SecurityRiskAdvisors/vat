@@ -123,6 +123,32 @@ Enable debug mode for detailed logs:
 ./vat -d <command>
 ```
 
+## Working with Encrypted Assessment Files
+
+> **⚠️ Warning:** Manually editing assessment files can risk corrupting data structures. Proceed with caution and ensure you understand the data format before making changes.
+
+### Extracting JSON from Encrypted Files
+
+To extract the JSON data from an encrypted assessment file in one command:
+
+```bash
+cat encrypted_file | age --decrypt --passphrase | gunzip > assessment.json
+```
+
+This command will prompt for the passphrase and then extract the decrypted JSON data.
+
+### Repackaging JSON into Encrypted Format
+
+To repackage a modified JSON file back into an encrypted archive:
+
+```bash
+cat modified_assessment.json | gzip | age --encrypt --passphrase > archive.age
+```
+
+This command will prompt for a passphrase and create an encrypted file that can be used with the restore command.
+
+Note: You'll need the [age encryption tool](https://github.com/FiloSottile/age) installed to perform these operations.
+
 ## Development
 
 ### Build the Application
