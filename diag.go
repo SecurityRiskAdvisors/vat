@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sra/vat/internal/dao"
 	"strings"
+	"text/tabwriter"
 )
 
 // ExtractMetadata takes an AssessmentData object and returns a formatted byte array
@@ -21,13 +22,15 @@ func ExtractMetadata(data *AssessmentData) []byte {
 	// Add assessment name if available
 	if data.Assessment.Name != "" {
 		buffer.WriteString(fmt.Sprintf("Assessment Name: %s\n", data.Assessment.Name))
+	} else {
+		buffer.WriteString("Assessment Name: <Not Found>\n")
 	}
-	
+
 	// Add assessment description if available
 	if data.Assessment.Description != "" {
 		buffer.WriteString(fmt.Sprintf("Description: %s\n", data.Assessment.Description))
 	}
-	
+
 	buffer.WriteString("\n")
 
 	// Assessment Metadata section
@@ -60,15 +63,15 @@ func ExtractMetadata(data *AssessmentData) []byte {
 func writeMetadataSection(buffer *strings.Builder, metadata map[string]string) {
 	for k, v := range metadata {
 		if v == "none_found" || len(v) == 0 {
-			metadata[k] = "Not Found"
+			metadata[k] = "<Not Found>"
 		}
 	}
 
-	buffer.WriteString(fmt.Sprintf("%-20s %s\n", "VAT Version:", metadata["version"]))
-
-	buffer.WriteString(fmt.Sprintf("%-20s %s\n", "Operation Date:", metadata["date"]))
-
-	buffer.WriteString(fmt.Sprintf("%-20s %s\n", "VECTR Version:", metadata["vectr-version"]))
+	w := tabwriter.NewWriter(buffer, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "VAT Version:\t"+metadata["version"])
+	fmt.Fprintln(w, "Operation Date:\t"+metadata["date"])
+	fmt.Fprintln(w, "VECTR Version:\t"+metadata["vectr-version"])
+	w.Flush()
 }
 
 func writeAssessmentMetadataSection(buffer *strings.Builder, assessment dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment) {
@@ -76,8 +79,10 @@ func writeAssessmentMetadataSection(buffer *strings.Builder, assessment dao.GetA
 		buffer.WriteString("No assessment metadata available\n")
 		return
 	}
-	
+
+	w := tabwriter.NewWriter(buffer, 0, 0, 2, ' ', 0)
 	for _, meta := range assessment.Metadata {
-		buffer.WriteString(fmt.Sprintf("%-20s %s\n", meta.Key+":", meta.Value))
+		fmt.Fprintln(w, meta.Key+":\t"+meta.Value)
 	}
+	w.Flush()
 }
