@@ -2,6 +2,7 @@ package vat
 
 import (
 	"fmt"
+	"sra/vat/internal/dao"
 	"strings"
 )
 
@@ -19,8 +20,21 @@ func ExtractMetadata(data *AssessmentData) []byte {
 
 	// Add assessment name if available
 	if data.Assessment.Name != "" {
-		buffer.WriteString(fmt.Sprintf("Assessment Name: %s\n\n", data.Assessment.Name))
+		buffer.WriteString(fmt.Sprintf("Assessment Name: %s\n", data.Assessment.Name))
 	}
+	
+	// Add assessment description if available
+	if data.Assessment.Description != "" {
+		buffer.WriteString(fmt.Sprintf("Description: %s\n", data.Assessment.Description))
+	}
+	
+	buffer.WriteString("\n")
+
+	// Assessment Metadata section
+	buffer.WriteString("Assessment Metadata:\n")
+	buffer.WriteString("-------------------\n")
+	writeAssessmentMetadataSection(&buffer, data.Assessment)
+	buffer.WriteString("\n")
 
 	// Save Data section
 	buffer.WriteString("Saved VAT Metadata:\n")
@@ -55,4 +69,15 @@ func writeMetadataSection(buffer *strings.Builder, metadata map[string]string) {
 	buffer.WriteString(fmt.Sprintf("%-20s %s\n", "Operation Date:", metadata["date"]))
 
 	buffer.WriteString(fmt.Sprintf("%-20s %s\n", "VECTR Version:", metadata["vectr-version"]))
+}
+
+func writeAssessmentMetadataSection(buffer *strings.Builder, assessment dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment) {
+	if len(assessment.Metadata) == 0 {
+		buffer.WriteString("No assessment metadata available\n")
+		return
+	}
+	
+	for _, meta := range assessment.Metadata {
+		buffer.WriteString(fmt.Sprintf("%-20s %s\n", meta.Key+":", meta.Value))
+	}
 }
