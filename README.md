@@ -125,7 +125,7 @@ Enable debug mode for detailed logs:
 
 ## Working with Encrypted Assessment Files
 
-> **⚠️ Warning:** Manually editing assessment files can risk corrupting data structures. Proceed with caution and ensure you understand the data format before making changes.
+> **🔒 Security Warning:** Extracting assessment data to unencrypted JSON files will leave sensitive assessment information in plaintext on your filesystem. This data may contain confidential information about security assessments, findings, and organizational details. Always store these files securely, use appropriate file permissions, and delete them when no longer needed.
 
 ### Extracting JSON from Encrypted Files
 
@@ -138,6 +138,8 @@ cat encrypted_file | age --decrypt --passphrase | gunzip > assessment.json
 This command will prompt for the passphrase and then extract the decrypted JSON data.
 
 ### Repackaging JSON into Encrypted Format
+
+> **⚠️ Warning:** Manually editing assessment files can risk corrupting data structures. Proceed with caution and ensure you understand the data format before making changes.
 
 To repackage a modified JSON file back into an encrypted archive:
 
