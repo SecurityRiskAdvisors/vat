@@ -116,6 +116,23 @@ Transfer an assessment from one VECTR instance directly to another:
 - `--override-template-assessment`: Overrides the template assessment set in the serialized data and uses the saved template data (lower fidelity).
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
 
+### Diagnostic Command
+
+View diagnostic information about an assessment file:
+
+#### Minimal Example
+```bash
+./vat diag --input-file <path-to-input-file>
+```
+
+#### Required Options
+- `--input-file`: Path to the encrypted assessment file.
+
+#### Optional Options
+- `--passphrase-file`: Path to the file containing the decryption passphrase.
+
+This command extracts metadata from an assessment file, including VAT version information, operation dates, VECTR version, assessment name, description, and any custom metadata fields.
+
 ### Debug Mode
 
 Enable debug mode for detailed logs:
