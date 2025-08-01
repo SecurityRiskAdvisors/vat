@@ -42,6 +42,7 @@ func Execute() {
 	RootCmd.AddCommand(transferCmd) // From transfer.go
 	RootCmd.AddCommand(licenseCmd)  // From license.go
 	RootCmd.AddCommand(dumpCmd)     // From dumper.go
+	RootCmd.AddCommand(diagCmd)     // From diag.go
 
 	// Execute the root command
 	if err := RootCmd.Execute(); err != nil {

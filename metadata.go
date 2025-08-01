@@ -28,7 +28,11 @@ Returns:
 func (v *VatOpMetadata) serialize() map[string]string {
 	r := make(map[string]string, 2)
 	r["version"] = v.Version
-	r["date"] = v.Date.Format(time.RFC3339)
+	if v.Date.IsZero() {
+		r["date"] = ""
+	} else {
+		r["date"] = v.Date.Format(time.RFC3339)
+	}
 	r["vectr-version"] = v.VectrVersion
 	for k, _ := range r {
 		if r[k] == "" {
