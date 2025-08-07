@@ -37,6 +37,9 @@ Save assessment data from a VECTR instance to an encrypted, compressed file:
 
 #### Optional Options
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
+- `--client-cert-file`: Path to the client certificate file for mTLS.
+- `--client-key-file`: Path to the client key file for mTLS.
+- `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs).
 
 ### Restore Assessment Data
 
@@ -55,9 +58,15 @@ Restore assessment data to a VECTR instance from an encrypted, compressed file:
 
 #### Optional Options
 - `--passphrase-file`: Path to the file containing the decryption passphrase.
+- `--client-cert-file`: Path to the client certificate file for mTLS.
+- `--client-key-file`: Path to the client key file for mTLS.
+- `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs).
 - `--target-assessment-name`: Overrides the name of the assessment being restored in the target instance.
 - `--override-template-assessment`: Overrides any set template name in the serialized data and loads template test cases anyway.
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
+- `--client-cert-file`: Path to the client certificate file for mTLS.
+- `--client-key-file`: Path to the client key file for mTLS.
+- `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs).
 
 ### Dump Assessment Data
 
@@ -76,6 +85,9 @@ Dump all assessments from a VECTR instance:
 #### Optional Options
 - `--filter-file`: Path to the filter file.
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
+- `--client-cert-file`: Path to the client certificate file for mTLS.
+- `--client-key-file`: Path to the client key file for mTLS.
+- `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs).
 
 #### Filter File Format
 The filter file is a CSV file used to specify which environments and assessments should be included in the dump process. Each line should contain an environment name followed by an assessment name, separated by a comma. You can use a wildcard (`*`) to include all environments or assessments.
@@ -114,7 +126,10 @@ Transfer an assessment from one VECTR instance directly to another:
 #### Optional Options
 - `--target-assessment-name`: Overrides the name of the assessment in the target instance.
 - `--override-template-assessment`: Overrides the template assessment set in the serialized data and uses the saved template data (lower fidelity).
-- `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
+- `-k`: Allow insecure connections (e.g., ignore TLS certificate errors). (will be applied for both source and dest)
+- `--client-cert-file`: Path to the client certificate file for mTLS. (will be applied for both source and dest)
+- `--client-key-file`: Path to the client key file for mTLS. (will be applied for both source and dest)
+- `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs). (will be applied for both source and dest)
 
 ### Diagnostic Command
 
