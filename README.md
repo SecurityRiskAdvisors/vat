@@ -19,6 +19,22 @@ You can download the latest binary from the [release page](https://github.com/Se
   * Suggest using `install -m 0400 /dev/null /path/to/file`.
 * Add the VECTR credentials into the file in the form of: `<key_id>:<key_secret>`.
 
+### Connecting to VECTR with TLS
+
+By default, `vat` attempts to establish a secure TLS connection to the VECTR instance. If the instance uses a TLS certificate that is not trusted by your system's default certificate authorities (e.g., a certificate from a private or corporate CA), you must provide a way to validate it.
+
+#### Using a Custom CA (`--ca-cert`)
+
+The `--ca-cert` flag is the **secure** way to connect to a VECTR instance that has a custom or internally-issued TLS certificate. You provide the public certificate of the Certificate Authority (CA) that signed the server's certificate. `vat` will use this CA to validate the server's identity, ensuring a secure and encrypted connection. This is the recommended approach for production or sensitive environments.
+
+#### Insecure Connections (`--insecure` or `-k`)
+
+The `--insecure` flag disables all TLS certificate validation. This means `vat` will not verify the identity of the VECTR server, making the connection vulnerable to man-in-the-middle (MITM) attacks. This option should only be used for temporary testing against development environments where you understand and accept the security risks. It is a convenient but **insecure** alternative to using `--ca-cert`.
+
+#### Mutual TLS (mTLS)
+
+For environments requiring client-side authentication, you can use `--client-cert-file` and `--client-key-file`. These flags provide a client certificate and private key to the VECTR server, which verifies the client's identity before allowing a connection. This is often used in addition to `--ca-cert` for a fully authenticated and encrypted channel.
+
 ### Save Assessment Data
 
 Save assessment data from a VECTR instance to an encrypted, compressed file:
