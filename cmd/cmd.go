@@ -5,8 +5,9 @@ import (
 
 	"log/slog"
 
-	"github.com/spf13/cobra"
 	"sra/vat/internal/util"
+
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -38,8 +39,13 @@ var RootCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		tlsParams = &util.CustomTlsParams{}
 		var err error
+
+		if len(clientCertFile) > 0 || len(clientKeyFile) > 0 || len(caCertFiles) > 0 || insecure {
+			tlsParams = &util.CustomTlsParams{
+				InsecureConnect: insecure, // just set this here since we are creating the object
+			}
+		}
 
 		if len(clientCertFile) > 0 {
 			tlsParams.ClientCertFile, err = os.ReadFile(clientCertFile)

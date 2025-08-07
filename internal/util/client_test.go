@@ -168,50 +168,44 @@ func TestVectrVersionHandler(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name            string
-		authKey         string
-		insecureConnect bool
-		tlsParams       CustomTlsParams
-		expectErr       bool
-		errContains     string
-		expectVersion   string
+		name          string
+		authKey       string
+		tlsParams     CustomTlsParams
+		expectErr     bool
+		errContains   string
+		expectVersion string
 	}{
 		{
-			name:            "Success with valid CA",
-			authKey:         correctAuthKey,
-			insecureConnect: false,
-			tlsParams:       CustomTlsParams{CaCertFiles: [][]byte{caPEM}},
-			expectErr:       false,
-			expectVersion:   correctVersion,
+			name:          "Success with valid CA",
+			authKey:       correctAuthKey,
+			tlsParams:     CustomTlsParams{CaCertFiles: [][]byte{caPEM}},
+			expectErr:     false,
+			expectVersion: correctVersion,
 		},
 		{
-			name:            "Success with InsecureSkipVerify",
-			authKey:         correctAuthKey,
-			insecureConnect: true,
-			tlsParams:       CustomTlsParams{},
-			expectErr:       false,
-			expectVersion:   correctVersion,
+			name:          "Success with InsecureSkipVerify",
+			authKey:       correctAuthKey,
+			tlsParams:     CustomTlsParams{InsecureConnect: true},
+			expectErr:     false,
+			expectVersion: correctVersion,
 		},
 		{
-			name:            "Failure due to untrusted CA",
-			authKey:         correctAuthKey,
-			insecureConnect: false,
-			tlsParams:       CustomTlsParams{}, // No CA provided
-			expectErr:       true,
-			errContains:     "unknown authority",
+			name:        "Failure due to untrusted CA",
+			authKey:     correctAuthKey,
+			tlsParams:   CustomTlsParams{}, // No CA provided
+			expectErr:   true,
+			errContains: "unknown authority",
 		},
 		{
-			name:            "Failure due to bad auth",
-			authKey:         "bad-key",
-			insecureConnect: false,
-			tlsParams:       CustomTlsParams{CaCertFiles: [][]byte{caPEM}},
-			expectErr:       true,
-			errContains:     ErrInvalidAuth.Error(),
+			name:        "Failure due to bad auth",
+			authKey:     "bad-key",
+			tlsParams:   CustomTlsParams{CaCertFiles: [][]byte{caPEM}},
+			expectErr:   true,
+			errContains: ErrInvalidAuth.Error(),
 		},
 		{
-			name:            "Success with ClientCert",
-			authKey:         correctAuthKey,
-			insecureConnect: false,
+			name:    "Success with ClientCert",
+			authKey: correctAuthKey,
 			tlsParams: CustomTlsParams{
 				ClientCertFile: clientCertPEM,
 				ClientKeyFile:  clientKeyPEM,
@@ -221,9 +215,8 @@ func TestVectrVersionHandler(t *testing.T) {
 			expectVersion: correctVersion,
 		},
 		{
-			name:            "Failure when ClientCert required but not provided",
-			authKey:         correctAuthKey,
-			insecureConnect: false,
+			name:    "Failure when ClientCert required but not provided",
+			authKey: correctAuthKey,
 			tlsParams: CustomTlsParams{
 				CaCertFiles: [][]byte{caPEM},
 			},
@@ -234,7 +227,10 @@ func TestVectrVersionHandler(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, versionHandler := SetupVectrClient(serverURL.Host, tc.authKey, tc.insecureConnect, &tc.tlsParams)
+			_, versionHandler, err := SetupVectrClient(serverURL.Host, tc.authKey, &tc.tlsParams)
+			if err != nil {
+				t.Fatalf("did not expect an error but got one: %s", err)
+			}
 
 			// The httptest server gives a URL with an IP, so we need to fix the version handler's path
 			// to use the correct hostname for the request, otherwise TLS validation fails on hostname mismatch.

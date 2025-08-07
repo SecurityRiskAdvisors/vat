@@ -29,9 +29,10 @@ type versionResponse struct {
 }
 
 type CustomTlsParams struct {
-	ClientKeyFile  []byte
-	ClientCertFile []byte
-	CaCertFiles    [][]byte
+	ClientKeyFile   []byte
+	ClientCertFile  []byte
+	CaCertFiles     [][]byte
+	InsecureConnect bool
 }
 
 // VectrVersionHandler manages HTTP requests to retrieve the current version of the VECTR application.
@@ -163,40 +164,35 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // Returns:
 //   - A GraphQL client configured for API requests.
 //   - A VectrVersionHandler for version checks.
-func SetupVectrClient(hostname, key string, insecureConnect bool, tlsParams *CustomTlsParams) (graphql.Client, *VectrVersionHandler) {
+func SetupVectrClient(hostname, key string, tlsParams *CustomTlsParams) (graphql.Client, *VectrVersionHandler, error) {
 	slog.Info("Setting up connection to VECTR", "url", hostname)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 
-	tlsConfig := &tls.Config{}
-	tlsConfigured := false
+	if tlsParams != nil {
 
-	if len(tlsParams.ClientCertFile) > 0 && len(tlsParams.ClientKeyFile) > 0 {
-		cert, err := tls.X509KeyPair(tlsParams.ClientCertFile, tlsParams.ClientKeyFile)
-		if err != nil {
-			slog.Error("Failed to load client certificate/key pair", "error", err)
-			os.Exit(1)
-		}
-		tlsConfig.Certificates = []tls.Certificate{cert}
-		tlsConfigured = true
-	}
+		tlsConfig := &tls.Config{}
 
-	if insecureConnect {
-		slog.Warn("Ignoring cert errors to VECTR", "url", hostname)
-		tlsConfig.InsecureSkipVerify = true
-		tlsConfigured = true
-	} else if len(tlsParams.CaCertFiles) > 0 {
-		caCertPool := x509.NewCertPool()
-		for _, caCert := range tlsParams.CaCertFiles {
-			if !caCertPool.AppendCertsFromPEM(caCert) {
-				slog.Error("Failed to append CA certificate from PEM")
-				os.Exit(1)
+		if len(tlsParams.ClientCertFile) > 0 && len(tlsParams.ClientKeyFile) > 0 {
+			cert, err := tls.X509KeyPair(tlsParams.ClientCertFile, tlsParams.ClientKeyFile)
+			if err != nil {
+				return nil, nil, fmt.Errorf("setclient: failed to load client certificate/key pair: %w", err)
 			}
+			tlsConfig.Certificates = []tls.Certificate{cert}
 		}
-		tlsConfig.RootCAs = caCertPool
-		tlsConfigured = true
-	}
 
-	if tlsConfigured {
+		if tlsParams.InsecureConnect {
+			slog.Warn("Ignoring cert errors to VECTR", "url", hostname)
+			tlsConfig.InsecureSkipVerify = true
+		} else if len(tlsParams.CaCertFiles) > 0 {
+			caCertPool := x509.NewCertPool()
+			for _, caCert := range tlsParams.CaCertFiles {
+				if !caCertPool.AppendCertsFromPEM(caCert) {
+					return nil, nil, fmt.Errorf("failed to append CA certs from PEM")
+				}
+			}
+			tlsConfig.RootCAs = caCertPool
+		}
+
 		transport.TLSClientConfig = tlsConfig
 	}
 
@@ -221,6 +217,6 @@ func SetupVectrClient(hostname, key string, insecureConnect bool, tlsParams *Cus
 		},
 	}
 
-	return graphql.NewClient(u.String(), &httpClient), v
+	return graphql.NewClient(u.String(), &httpClient), v, nil
 
 }
