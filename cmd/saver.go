@@ -54,7 +54,7 @@ var saveCmd = &cobra.Command{
 		}
 
 		// Set up the VECTR client
-		client, vectrVersionHandler := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), insecure)
+		client, vectrVersionHandler := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), insecure, tlsParams)
 
 		// get the VECTR version (side effect - check the creds as well)
 		vectrVersion, err := vectrVersionHandler.Get(ctx)

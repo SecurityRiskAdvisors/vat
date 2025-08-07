@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,12 @@ type versionResponse struct {
 		CurrentVersion string `json:"currentVersion"`
 		Error          string `json:"error"`
 	} `json:"data"`
+}
+
+type CustomTlsParams struct {
+	ClientKeyFile  []byte
+	ClientCertFile []byte
+	CaCertFiles    [][]byte
 }
 
 // VectrVersionHandler manages HTTP requests to retrieve the current version of the VECTR application.
@@ -151,17 +158,48 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 //   - hostname: The hostname of the VECTR instance.
 //   - key: The authentication key for API requests.
 //   - insecureConnect: A boolean indicating whether to ignore TLS certificate errors.
+//   - tlsParams: A struct containing custom TLS configuration byte slices for certs and keys.
 //
 // Returns:
 //   - A GraphQL client configured for API requests.
 //   - A VectrVersionHandler for version checks.
-func SetupVectrClient(hostname, key string, insecureConnect bool) (graphql.Client, *VectrVersionHandler) {
+func SetupVectrClient(hostname, key string, insecureConnect bool, tlsParams *CustomTlsParams) (graphql.Client, *VectrVersionHandler) {
 	slog.Info("Setting up connection to VECTR", "url", hostname)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	tlsConfig := &tls.Config{}
+	tlsConfigured := false
+
+	if len(tlsParams.ClientCertFile) > 0 && len(tlsParams.ClientKeyFile) > 0 {
+		cert, err := tls.X509KeyPair(tlsParams.ClientCertFile, tlsParams.ClientKeyFile)
+		if err != nil {
+			slog.Error("Failed to load client certificate/key pair", "error", err)
+			os.Exit(1)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+		tlsConfigured = true
+	}
+
 	if insecureConnect {
 		slog.Warn("Ignoring cert errors to VECTR", "url", hostname)
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		tlsConfig.InsecureSkipVerify = true
+		tlsConfigured = true
+	} else if len(tlsParams.CaCertFiles) > 0 {
+		caCertPool := x509.NewCertPool()
+		for _, caCert := range tlsParams.CaCertFiles {
+			if !caCertPool.AppendCertsFromPEM(caCert) {
+				slog.Error("Failed to append CA certificate from PEM")
+				os.Exit(1)
+			}
+		}
+		tlsConfig.RootCAs = caCertPool
+		tlsConfigured = true
 	}
+
+	if tlsConfigured {
+		transport.TLSClientConfig = tlsConfig
+	}
+
 	httpClient := http.Client{
 		Transport: &authTransport{
 			key:     key,

@@ -96,8 +96,8 @@ func TestRoundtripAssessmentData(t *testing.T) {
 	src_assessment := os.Getenv("SOURCE_ASSESSMENT")
 	dst_db := os.Getenv("DEST_DB")
 
-	s, _ := util.SetupVectrClient(src_hostname, src_creds, true)
-	d, _ := util.SetupVectrClient(dst_hostname, dst_creds, true)
+	s, _ := util.SetupVectrClient(src_hostname, src_creds, true, nil)
+	d, _ := util.SetupVectrClient(dst_hostname, dst_creds, true, nil)
 
 	o, err := vat.SaveAssessmentData(ctx, s, src_db, src_assessment)
 	if err != nil {
