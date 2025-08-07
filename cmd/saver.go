@@ -26,7 +26,6 @@ var (
 	hostname        string
 	credentialsFile string
 	outputFile      string
-	insecure        bool
 )
 
 var saveCmd = &cobra.Command{
@@ -136,7 +135,6 @@ func init() {
 	saveCmd.Flags().StringVar(&assessmentName, "assessment-name", "", "Name of the assessment to save (required)")
 	saveCmd.Flags().StringVar(&credentialsFile, "vectr-creds-file", "", "Path to the VECTR credentials file (required)")
 	saveCmd.Flags().StringVar(&outputFile, "output-file", "", "Path to the output file (required)")
-	saveCmd.Flags().BoolVarP(&insecure, "insecure", "k", false, "Allow insecure connections to the instance (e.g., ignore TLS certificate errors)")
 
 	// Mark flags as required
 	saveCmd.MarkFlagsOneRequired("db", "env")

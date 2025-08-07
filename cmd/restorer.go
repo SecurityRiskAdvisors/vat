@@ -132,7 +132,6 @@ func init() {
 	restoreCmd.Flags().StringVar(&inputFile, "input-file", "", "Path to the encrypted input file (required)")
 	restoreCmd.Flags().StringVar(&passphraseFile, "passphrase-file", "", "Path to the file containing the decryption passphrase")
 	restoreCmd.Flags().StringVar(&targetAssessmentName, "target-assessment-name", "", "The assessment name to set in the new instance")
-	restoreCmd.Flags().BoolVarP(&insecure, "insecure", "k", false, "Allow insecure connections to the instance (e.g., ignore TLS certificate errors)")
 	restoreCmd.Flags().BoolVar(&overrideAssessmentTemplate, "override-template-assessment", false, "Override any set template name in the serialized data and load template test cases anyway")
 
 	// Mark flags as required

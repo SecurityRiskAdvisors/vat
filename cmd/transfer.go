@@ -120,7 +120,6 @@ func init() {
 	transferCmd.Flags().StringVar(&targetDB, "target-env", "", "Alias for --target-db")
 	transferCmd.Flags().StringVar(&assessmentName, "assessment-name", "", "Name of the assessment to transfer (required)")
 	transferCmd.Flags().StringVar(&targetAssessmentName, "target-assessment-name", "", "The assessment name to set in the new instance")
-	transferCmd.Flags().BoolVarP(&insecure, "insecure", "k", false, "Allow insecure connections to the instances (e.g., ignore TLS certificate errors)")
 	transferCmd.Flags().BoolVar(&overrideAssessmentTemplate, "override-template-assessment", false, "Ignore the template name in the serialized data and load template test cases anyway")
 
 	// Mark flags as required

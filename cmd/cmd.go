@@ -11,6 +11,7 @@ import (
 
 var (
 	debug                      bool
+	insecure                   bool
 	targetAssessmentName       string
 	overrideAssessmentTemplate bool
 	clientCertFile             string
@@ -73,6 +74,7 @@ var RootCmd = &cobra.Command{
 func Execute() {
 	// Add global flags
 	RootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable debug mode")
+	RootCmd.PersistentFlags().BoolVarP(&insecure, "insecure", "k", false, "Allow insecure server connections when using TLS")
 	RootCmd.PersistentFlags().StringVar(&clientCertFile, "client-cert-file", "", "Path to the client certificate file")
 	RootCmd.PersistentFlags().StringVar(&clientKeyFile, "client-key-file", "", "Path to the client key file")
 	RootCmd.PersistentFlags().StringSliceVar(&caCertFiles, "ca-cert", []string{}, "Path to a CA certificate file (can be used multiple times)")

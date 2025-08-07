@@ -185,7 +185,6 @@ func init() {
 	dumpCmd.Flags().StringVar(&hostname, "hostname", "", "Hostname of the VECTR instance (required)")
 	dumpCmd.Flags().StringVar(&credentialsFile, "vectr-creds-file", "", "Path to the VECTR credentials file (required)")
 	dumpCmd.Flags().StringVar(&outputDir, "output-dir", "", "Directory to output the assessment files (required)")
-	dumpCmd.Flags().BoolVarP(&insecure, "insecure", "k", false, "Allow insecure connections to the instance (e.g., ignore TLS certificate errors)")
 
 	dumpCmd.Flags().StringVar(&filterFile, "filter-file", "", "Path to the filter file (optional)")
 	dumpCmd.MarkFlagRequired("hostname")
