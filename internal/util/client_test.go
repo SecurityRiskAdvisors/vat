@@ -2,8 +2,8 @@ package util
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -26,7 +26,7 @@ import (
 // generateCertsForTest creates a CA, a server certificate/key, and a client certificate/key for testing purposes.
 func generateCertsForTest(t *testing.T) (caPEM, serverCertPEM, serverKeyPEM, clientCertPEM, clientKeyPEM []byte) {
 	// Create a new private key for the CA
-	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	caPubKey, caKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to generate CA key: %v", err)
 	}
@@ -41,7 +41,7 @@ func generateCertsForTest(t *testing.T) (caPEM, serverCertPEM, serverKeyPEM, cli
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
-	caDER, err := x509.CreateCertificate(rand.Reader, caTpl, caTpl, &caKey.PublicKey, caKey)
+	caDER, err := x509.CreateCertificate(rand.Reader, caTpl, caTpl, caPubKey, caKey)
 	if err != nil {
 		t.Fatalf("failed to create CA certificate: %v", err)
 	}
@@ -52,11 +52,15 @@ func generateCertsForTest(t *testing.T) (caPEM, serverCertPEM, serverKeyPEM, cli
 	}
 
 	// Create a new private key for the server
-	serverKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	serverPubKey, serverKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to generate server key: %v", err)
 	}
-	serverKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(serverKey)})
+	pkcs8Server, err := x509.MarshalPKCS8PrivateKey(serverKey)
+	if err != nil {
+		t.Fatalf("could not marshal key: %s", err)
+	}
+	serverKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8Server})
 
 	// Create the server certificate
 	serverTpl := &x509.Certificate{
@@ -68,18 +72,23 @@ func generateCertsForTest(t *testing.T) (caPEM, serverCertPEM, serverKeyPEM, cli
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		DNSNames:     []string{"localhost"},
 	}
-	serverDER, err := x509.CreateCertificate(rand.Reader, serverTpl, caCert, &serverKey.PublicKey, caKey)
+	serverDER, err := x509.CreateCertificate(rand.Reader, serverTpl, caCert, serverPubKey, caKey)
 	if err != nil {
 		t.Fatalf("failed to create server certificate: %v", err)
 	}
 	serverCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverDER})
 
 	// Create a new private key for the client
-	clientKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	//clientKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	clientPubKey, clientKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to generate client key: %v", err)
 	}
-	clientKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(clientKey)})
+	pkcs8Client, err := x509.MarshalPKCS8PrivateKey(clientKey)
+	if err != nil {
+		t.Fatalf("could not marshal key: %s", err)
+	}
+	clientKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8Client})
 
 	// Create the client certificate
 	clientTpl := &x509.Certificate{
@@ -90,7 +99,7 @@ func generateCertsForTest(t *testing.T) (caPEM, serverCertPEM, serverKeyPEM, cli
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-	clientDER, err := x509.CreateCertificate(rand.Reader, clientTpl, caCert, &clientKey.PublicKey, caKey)
+	clientDER, err := x509.CreateCertificate(rand.Reader, clientTpl, caCert, clientPubKey, caKey)
 	if err != nil {
 		t.Fatalf("failed to create client certificate: %v", err)
 	}
