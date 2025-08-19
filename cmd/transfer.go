@@ -65,31 +65,31 @@ var transferCmd = &cobra.Command{
 		sourceVectrVersion, err := sourceVectrVersionHandler.Get(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
-				slog.Error("could not validate source creds", "src-hostname", hostname, "error", err)
+				slog.Error("could not validate source creds", "src-hostname", sourceHostname, "error", err)
 				os.Exit(1)
 			}
-			slog.Error("could not get srouce vectr version", "src-hostname", hostname, "error", err)
+			slog.Error("could not get srouce vectr version", "src-hostname", sourceHostname, "error", err)
 			os.Exit(1)
 		}
-		slog.Info("validated credentials and fetched vectr version from source", "src-hostname", hostname, "src-vectr-version", sourceVectrVersion)
+		slog.Info("validated credentials and fetched vectr version from source", "src-hostname", sourceHostname, "src-vectr-version", sourceVectrVersion)
 		sourceVersionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(sourceVectrVersion))
 
 		// Set up the target VECTR client
 		targetClient, targetVectrVersionHandler, err := util.SetupVectrClient(targetHostname, strings.TrimSpace(string(targetCredentials)), tlsParams)
 		if err != nil {
-			slog.Error("could not set up connection to vectr", "hostname", hostname, "error", err)
+			slog.Error("could not set up connection to vectr", "hostname", targetHostname, "error", err)
 		}
 		// get the VECTR version (side effect - check the creds as well)
 		targetVectrVersion, err := targetVectrVersionHandler.Get(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
-				slog.Error("could not validate creds", "hostname", hostname, "error", err)
+				slog.Error("could not validate creds", "hostname", targetHostname, "error", err)
 				os.Exit(1)
 			}
-			slog.Error("could not get vectr version", "hostname", hostname, "error", err)
+			slog.Error("could not get vectr version", "hostname", targetHostname, "error", err)
 			os.Exit(1)
 		}
-		slog.Info("validated credentials and fetched vectr version", "hostname", hostname, "vectr-version", targetVectrVersion)
+		slog.Info("validated credentials and fetched vectr version", "hostname", targetHostname, "vectr-version", targetVectrVersion)
 		targetVersionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(targetVectrVersion))
 
 		// Fetch the assessment data from the source instance
