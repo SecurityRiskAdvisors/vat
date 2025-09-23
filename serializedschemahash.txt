@@ -959,7 +959,11 @@ string
 Version
 string
 OptionalFields
-struct { OrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization }
+struct { OrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization; BundleID string; BundlePrefix string }
+BundleID
+string
+BundlePrefix
+string
 OrgMap
 map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
 string
@@ -995,4 +999,4 @@ Name
 string
 ProductName
 string
-finalized: 67f61abc8e6bac3ed5ed7db97cc3debe3641aa96b5f2b13392929d5e17be2a28
+finalized: 00a9d5f86b55ac3168432df1f38ea21a95c919d28d573a233d8f72218e3267dc

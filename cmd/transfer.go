@@ -62,7 +62,7 @@ var transferCmd = &cobra.Command{
 		}
 
 		// get the VECTR version (side effect - check the creds as well)
-		sourceVectrVersion, err := sourceVectrVersionHandler.Get(ctx)
+		sourceVectrVersion, err := sourceVectrVersionHandler.GetVersion(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
 				slog.Error("could not validate source creds", "src-hostname", sourceHostname, "error", err)
@@ -80,7 +80,7 @@ var transferCmd = &cobra.Command{
 			slog.Error("could not set up connection to vectr", "hostname", targetHostname, "error", err)
 		}
 		// get the VECTR version (side effect - check the creds as well)
-		targetVectrVersion, err := targetVectrVersionHandler.Get(ctx)
+		targetVectrVersion, err := targetVectrVersionHandler.GetVersion(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
 				slog.Error("could not validate creds", "hostname", targetHostname, "error", err)

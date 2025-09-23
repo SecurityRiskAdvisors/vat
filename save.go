@@ -45,7 +45,9 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		ToolsMap:   map[string]GenericBlueTool{},
 		IdToolsMap: map[string]GenericBlueTool{},
 		OptionalFields: struct {
-			OrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+			OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+			BundleID     string
+			BundlePrefix string
 		}{
 			OrgMap: make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 		},
@@ -113,10 +115,39 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 	}
 
 	// check if there is a library assessment (bundle) to use
+	completionProgress := map[string]bool{
+		"bundle": false,
+		"prefix": false,
+	}
 	for _, metadata := range data.Assessment.Metadata {
 		if metadata.Key == "bundle" {
 			data.TemplateAssessment = metadata.Value
+			completionProgress["bundle"] = true
+		}
+		if metadata.Key == "prefix" {
+			data.OptionalFields.BundlePrefix = metadata.Value
+			completionProgress["prefix"] = true
+		}
+		// this isn't the cleanest version, but if I have more keys I can do it that way
+		if completionProgress["bundle"] && completionProgress["prefix"] {
 			break
+		}
+	}
+	// if we could find a template assessment, then let's get the ID for it as well
+	if data.TemplateAssessment != "" {
+		var bundle_name string = data.TemplateAssessment
+		if data.OptionalFields.BundlePrefix != "" {
+			bundle_name = fmt.Sprintf("%s - %s", data.OptionalFields.BundlePrefix, data.TemplateAssessment)
+		}
+		bundleIdResponse, err := dao.GetBundleByName(ctx, client, bundle_name)
+		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.Error("detailed error", "error", gqlObject)
+			}
+			return nil, fmt.Errorf("could not connect to get the bundle id for %s. Env: %s: %w", data.TemplateAssessment, db, err)
+		}
+		if len(bundleIdResponse.LibraryAssessments.Nodes) > 0 {
+			data.OptionalFields.BundleID = bundleIdResponse.LibraryAssessments.Nodes[0].Id //there can only be one field due to the graphql query
 		}
 	}
 

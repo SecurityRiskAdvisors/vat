@@ -99,7 +99,7 @@ var restoreCmd = &cobra.Command{
 		}
 
 		// get the VECTR version (side effect - check the creds as well)
-		vectrVersion, err := vectrVersionHandler.Get(ctx)
+		vectrVersion, err := vectrVersionHandler.GetVersion(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
 				slog.Error("could not validate creds", "hostname", hostname, "error", err)

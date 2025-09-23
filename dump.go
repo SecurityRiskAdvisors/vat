@@ -81,7 +81,9 @@ func DumpInstance(ctx context.Context, client graphql.Client, filter *util.Filte
 						ToolsMap:   map[string]GenericBlueTool{},
 						IdToolsMap: map[string]GenericBlueTool{},
 						OptionalFields: struct {
-							OrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+							OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+							BundleID     string
+							BundlePrefix string
 						}{
 							OrgMap: make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 						},

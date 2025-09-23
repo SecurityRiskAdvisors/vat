@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -56,7 +57,7 @@ var dumpCmd = &cobra.Command{
 		}
 
 		// Get the VECTR version (side effect - check the creds as well)
-		vectrVersion, err := vectrVersionHandler.Get(ctx)
+		vectrVersion, err := vectrVersionHandler.GetVersion(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
 				slog.Error("could not validate creds", "hostname", hostname, "error", err)
@@ -109,6 +110,8 @@ var dumpCmd = &cobra.Command{
 			slog.Error("Failed to create output directory", "error", err)
 			os.Exit(1)
 		}
+
+		isvCache := make(map[string][]byte)
 
 		// Process each assessment
 		for _, entry := range dumpedData {
@@ -178,7 +181,39 @@ var dumpCmd = &cobra.Command{
 				continue
 			}
 
-			slog.Info("Assessment dumped successfully", "assessment", entry.AssessmentName, "output-file", outputFilePath, "passphrase-file", passphraseFilePath)
+			var isvPath string
+			if entry.Ad.OptionalFields.BundleID != "" {
+				// check the cache for the isv, populate it if it's not there
+				if _, ok := isvCache[entry.Ad.OptionalFields.BundleID]; !ok {
+					isv, err := vectrVersionHandler.GetIsv(ctx, entry.Ad.OptionalFields.BundleID)
+					if err != nil {
+						slog.ErrorContext(ctx, "could not save isv, you will have to do it manually", "test-plan-name", entry.Ad.TemplateAssessment, "hostname", hostname, "db", entry.Db, "assessment-name", entry.AssessmentName)
+					} else {
+						isvCache[entry.Ad.OptionalFields.BundleID] = make([]byte, len(isv))
+						copy(isvCache[entry.Ad.OptionalFields.BundleID], isv) // cache the isv data
+					}
+				}
+				// if you can find it, then go ahead and write the file
+				if isv, ok := isvCache[entry.Ad.OptionalFields.BundleID]; ok {
+					isvPath = fmt.Sprintf("%s.%s.isv", outputFilePath, entry.Ad.OptionalFields.BundleID)
+					err := os.WriteFile(isvPath, isv, 0666)
+					if err != nil {
+						slog.ErrorContext(ctx, "could not write isv file, you'll have to clean up and do it manually",
+							"file-name", isvPath,
+							"test-plan-name", entry.Ad.TemplateAssessment,
+							"hostname", hostname,
+							"db", entry.Db,
+							"assessment-name", entry.AssessmentName,
+							"error", err)
+					} else {
+						slog.Info("Successfully wrote isv bundle file", "file-path", isvPath)
+					}
+				} else {
+					slog.ErrorContext(ctx, "could not find associated isv", "test-plan-name", entry.Ad.TemplateAssessment, "hostname", hostname, "db", entry.Db, "assessment-name", entry.AssessmentName)
+				}
+			}
+
+			slog.Info("Assessment dumped successfully", "assessment", entry.AssessmentName, "output-file", outputFilePath, "passphrase-file", passphraseFilePath, "isv-path (if exists)", isvPath)
 		}
 	},
 }

@@ -17,8 +17,11 @@ import (
 	"github.com/Khan/genqlient/graphql"
 )
 
-const API_PATH string = "/sra-purpletools-rest/graphql/"
-const VERSION_PATH string = "/sra-purpletools-rest/update/versionCheck"
+const (
+	API_PATH        string = "/sra-purpletools-rest/graphql/"
+	VERSION_PATH    string = "/sra-purpletools-rest/update/versionCheck"
+	ISV_EXPORT_PATH string = "/sra-purpletools-rest/export/isv/"
+)
 
 type versionResponse struct {
 	Code int `json:"code"`
@@ -40,9 +43,10 @@ type CustomTlsParams struct {
 // Fields:
 //   - httpClient: An HTTP client used to perform requests.
 //   - versionPath: URL for the version check endpoint.
-type VectrVersionHandler struct {
-	httpClient  http.Client
-	versionPath url.URL
+type VectrRestApiCaller struct {
+	httpClient    http.Client
+	versionPath   url.URL
+	isvExportPath url.URL
 }
 
 var ErrInvalidAuth = errors.New("credentials invalid")
@@ -62,27 +66,20 @@ var ErrInvalidAuth = errors.New("credentials invalid")
 // Errors:
 //   - Returns `ErrInvalidAuth` if the response status is unauthorized.
 //   - Returns an error if the request cannot be completed or the response cannot be parsed.
-func (v *VectrVersionHandler) Get(ctx context.Context) (string, error) {
+func (v *VectrRestApiCaller) GetVersion(ctx context.Context) (string, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.versionPath.String(), nil)
 	if err != nil {
 		return "", fmt.Errorf("could not create method: %w", err)
 	}
 
-	resp, err := v.httpClient.Do(req)
+	// doer handles the errors the rest api can send back
+	resp, err := v.doer(req)
 	if err != nil {
-		return "", fmt.Errorf("could not complete request: %w", err)
+		return "", err
 	}
 
 	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		return "", ErrInvalidAuth
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected response: %d", resp.StatusCode)
-	}
 
 	var parsedResponse versionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsedResponse); err != nil {
@@ -90,6 +87,46 @@ func (v *VectrVersionHandler) Get(ctx context.Context) (string, error) {
 	}
 
 	return parsedResponse.Data.CurrentVersion, nil
+}
+
+func (v *VectrRestApiCaller) GetIsv(ctx context.Context, isv string) ([]byte, error) {
+	path := v.isvExportPath.JoinPath(isv)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not create method: %w", err)
+	}
+
+	resp, err := v.doer(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var body bytes.Buffer
+	_, err = io.Copy(&body, resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("could not read isv body: %w", err)
+	}
+	return body.Bytes(), nil
+
+}
+
+func (v *VectrRestApiCaller) doer(req *http.Request) (*http.Response, error) {
+	resp, err := v.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("could not complete request: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, ErrInvalidAuth
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected response: %d", resp.StatusCode)
+	}
+	return resp, nil
+
 }
 
 // authTransport is a custom HTTP transport that adds authentication headers to requests.
@@ -164,7 +201,7 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // Returns:
 //   - A GraphQL client configured for API requests.
 //   - A VectrVersionHandler for version checks.
-func SetupVectrClient(hostname, key string, tlsParams *CustomTlsParams) (graphql.Client, *VectrVersionHandler, error) {
+func SetupVectrClient(hostname, key string, tlsParams *CustomTlsParams) (graphql.Client, *VectrRestApiCaller, error) {
 	slog.Info("Setting up connection to VECTR", "url", hostname)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 
@@ -208,12 +245,17 @@ func SetupVectrClient(hostname, key string, tlsParams *CustomTlsParams) (graphql
 		Path:   API_PATH,
 	}
 
-	v := &VectrVersionHandler{
+	v := &VectrRestApiCaller{
 		httpClient: httpClient,
 		versionPath: url.URL{
 			Host:   hostname,
 			Scheme: "https",
 			Path:   VERSION_PATH,
+		},
+		isvExportPath: url.URL{
+			Host:   hostname,
+			Scheme: "https",
+			Path:   ISV_EXPORT_PATH,
 		},
 	}
 

@@ -26,6 +26,7 @@ var (
 	hostname        string
 	credentialsFile string
 	outputFile      string
+	disableBundle   bool
 )
 
 var saveCmd = &cobra.Command{
@@ -53,13 +54,13 @@ var saveCmd = &cobra.Command{
 		}
 
 		// Set up the VECTR client
-		client, vectrVersionHandler, err := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), tlsParams)
+		client, vectrRestApiCaller, err := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), tlsParams)
 		if err != nil {
 			slog.Error("could not set up connection to vectr", "hostname", hostname, "error", err)
 		}
 
 		// get the VECTR version (side effect - check the creds as well)
-		vectrVersion, err := vectrVersionHandler.Get(ctx)
+		vectrVersion, err := vectrRestApiCaller.GetVersion(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
 				slog.Error("could not validate creds", "hostname", hostname, "error", err)
@@ -74,7 +75,8 @@ var saveCmd = &cobra.Command{
 		// Call SaveAssessmentData
 		data, err := vat.SaveAssessmentData(versionContext, client, db, assessmentName)
 		if err != nil {
-			log.Fatalf("Failed to save assessment: %v", err)
+			slog.ErrorContext(ctx, "could not save assessment", "hostname", hostname, "db", db, "assessment-name", assessmentName, "error", err)
+			os.Exit(1)
 		}
 
 		// Serialize the data to JSON
@@ -120,9 +122,31 @@ var saveCmd = &cobra.Command{
 			log.Fatalf("Failed to write compressed data: %v", err)
 		}
 
+		if !(disableBundle || data.OptionalFields.BundleID == "") {
+			isv, err := vectrRestApiCaller.GetIsv(ctx, data.OptionalFields.BundleID)
+			if err != nil {
+				slog.ErrorContext(ctx, "could not save isv, you will have to do it manually", "test-plan-name", data.TemplateAssessment, "hostname", hostname, "db", db, "assessment-name", assessmentName)
+			} else {
+				isvPath := fmt.Sprintf("%s.%s.isv", outputFile, data.OptionalFields.BundleID)
+				err := os.WriteFile(isvPath, isv, 0666)
+				if err != nil {
+					slog.ErrorContext(ctx, "could not write isv file, you'll have to clean up and do it manually",
+						"file-name", isvPath,
+						"test-plan-name", data.TemplateAssessment,
+						"hostname", hostname,
+						"db", db,
+						"assessment-name", assessmentName,
+						"error", err)
+				} else {
+					slog.Info("Successfully wrote isv bundle file", "file-path", isvPath)
+				}
+			}
+		}
+
 		fmt.Printf("Assessment data saved, compressed, and encrypted to %s\n", outputFile)
 		fmt.Println("Next steps:")
 		fmt.Printf("1. Export or save a copy of the template assessment: %s. Instructions here: https://docs.vectr.io/user/data-import/#vectr-import-export-json\n", data.TemplateAssessment)
+		fmt.Println("1a. It is possible the isv was written as part of this execution - look for `Successfully wrote isv bundle file` for the file path.")
 		fmt.Printf("2. Save the live-data passsword (securely!): %s\n", passphrase)
 		fmt.Printf("3. Provide %s, the template assessment (%s) and the passphrase for the file to the client along with a copy of this program.\n", outputFile, data.TemplateAssessment)
 		fmt.Println("4. You can then restore the saved assessment data into the client env.")
@@ -138,6 +162,7 @@ func init() {
 	saveCmd.Flags().StringVar(&assessmentName, "assessment-name", "", "Name of the assessment to save (required)")
 	saveCmd.Flags().StringVar(&credentialsFile, "vectr-creds-file", "", "Path to the VECTR credentials file (required)")
 	saveCmd.Flags().StringVar(&outputFile, "output-file", "", "Path to the output file (required)")
+	saveCmd.Flags().BoolVar(&disableBundle, "disable-bundle", false, "disable downloading the bundle if found")
 
 	// Mark flags as required
 	saveCmd.MarkFlagsOneRequired("db", "env")
