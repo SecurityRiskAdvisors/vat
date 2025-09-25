@@ -53,7 +53,7 @@ func DumpInstance(ctx context.Context, client graphql.Client, filter *util.Filte
 	dbs, err := dao.GetAllDatabases(ctx, client)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
-			slog.Error("detailed error", "error", gqlObject)
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 		}
 		return nil, fmt.Errorf("could not get databases for instance: %w: %w", err, ErrDumpInstanceFailure)
 	}
@@ -66,7 +66,7 @@ func DumpInstance(ctx context.Context, client graphql.Client, filter *util.Filte
 			assessments, err := dao.GetBatchAssessmentsForDb(ctx, client, db.Name)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.Error("detailed error", "error", gqlObject)
+					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 				}
 				return dumpedAssessments, fmt.Errorf("could not dump assessments for db: %s; %w: %w", db.Name, err, ErrDumpInstanceFailure)
 			}
@@ -94,7 +94,7 @@ func DumpInstance(ctx context.Context, client graphql.Client, filter *util.Filte
 					ad, err := saveAssessment(ctx, client, assessment, data, db.Name)
 					if err != nil {
 						if gqlObject, ok := gqlErrParse(err); ok {
-							slog.Error("Could not dump assessment", "error", gqlObject, "db", db.Name, "assessment", assessment.Name)
+							slog.ErrorContext(ctx, "Could not dump assessment", "error", gqlObject, "db", db.Name, "assessment", assessment.Name)
 						}
 						ae.Err = fmt.Errorf("could not dump assessment, db: %s, assessment-name: %s, %w", db.Name, assessment.Name, err)
 						overallError = ErrDumpAssessmentFailure

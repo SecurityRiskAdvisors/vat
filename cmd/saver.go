@@ -56,20 +56,20 @@ var saveCmd = &cobra.Command{
 		// Set up the VECTR client
 		client, vectrRestApiCaller, err := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), tlsParams)
 		if err != nil {
-			slog.Error("could not set up connection to vectr", "hostname", hostname, "error", err)
+			slog.ErrorContext(ctx, "could not set up connection to vectr", "hostname", hostname, "error", err)
 		}
 
 		// get the VECTR version (side effect - check the creds as well)
 		vectrVersion, err := vectrRestApiCaller.GetVersion(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
-				slog.Error("could not validate creds", "hostname", hostname, "error", err)
+				slog.ErrorContext(ctx, "could not validate creds", "hostname", hostname, "error", err)
 				os.Exit(1)
 			}
-			slog.Error("could not get vectr version", "hostname", hostname, "error", err)
+			slog.ErrorContext(ctx, "could not get vectr version", "hostname", hostname, "error", err)
 			os.Exit(1)
 		}
-		slog.Info("validated credentials and fetched vectr version", "hostname", hostname, "vectr-version", vectrVersion)
+		slog.InfoContext(ctx, "validated credentials and fetched vectr version", "hostname", hostname, "vectr-version", vectrVersion)
 		versionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(vectrVersion))
 
 		// Call SaveAssessmentData
@@ -138,7 +138,7 @@ var saveCmd = &cobra.Command{
 						"assessment-name", assessmentName,
 						"error", err)
 				} else {
-					slog.Info("Successfully wrote isv bundle file", "file-path", isvPath)
+					slog.InfoContext(ctx, "Successfully wrote isv bundle file", "file-path", isvPath)
 				}
 			}
 		}

@@ -45,21 +45,21 @@ var restoreCmd = &cobra.Command{
 		// Read credentials from the file
 		credentials, err := os.ReadFile(credentialsFile)
 		if err != nil {
-			slog.Error("Failed to read credentials file", "error", err)
+			slog.ErrorContext(ctx, "Failed to read credentials file", "error", err)
 			os.Exit(1)
 		}
 
 		// Read the passphrase
 		passphrase, err := getPassphrase(passphraseFile)
 		if err != nil {
-			slog.Error("Failed to read passphrase", "error", err)
+			slog.ErrorContext(ctx, "Failed to read passphrase", "error", err)
 			os.Exit(1)
 		}
 
 		// Open the encrypted input file
 		encryptedFile, err := os.Open(inputFile)
 		if err != nil {
-			slog.Error("Failed to open input file", "error", err)
+			slog.ErrorContext(ctx, "Failed to open input file", "error", err)
 			os.Exit(1)
 		}
 		defer encryptedFile.Close()
@@ -67,20 +67,20 @@ var restoreCmd = &cobra.Command{
 		// Set up the age decryption
 		identity, err := age.NewScryptIdentity(passphrase)
 		if err != nil {
-			slog.Error("Failed to create scrypt identity", "error", err)
+			slog.ErrorContext(ctx, "Failed to create scrypt identity", "error", err)
 			os.Exit(1)
 		}
 
 		decryptor, err := age.Decrypt(encryptedFile, identity)
 		if err != nil {
-			slog.Error("Failed to initialize decryption", "error", err)
+			slog.ErrorContext(ctx, "Failed to initialize decryption", "error", err)
 			os.Exit(1)
 		}
 
 		// Set up GZIP decompression
 		gzipReader, err := gzip.NewReader(decryptor)
 		if err != nil {
-			slog.Error("Failed to initialize GZIP decompression", "error", err)
+			slog.ErrorContext(ctx, "Failed to initialize GZIP decompression", "error", err)
 			os.Exit(1)
 		}
 		defer gzipReader.Close()
@@ -88,27 +88,27 @@ var restoreCmd = &cobra.Command{
 		// Read and deserialize the JSON data
 		var assessmentData vat.AssessmentData
 		if err := json.NewDecoder(gzipReader).Decode(&assessmentData); err != nil {
-			slog.Error("Failed to decode JSON data", "error", err)
+			slog.ErrorContext(ctx, "Failed to decode JSON data", "error", err)
 			os.Exit(1)
 		}
 
 		// Set up the VECTR client
 		client, vectrVersionHandler, err := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), tlsParams)
 		if err != nil {
-			slog.Error("could not set up connection to vectr", "hostname", hostname, "error", err)
+			slog.ErrorContext(ctx, "could not set up connection to vectr", "hostname", hostname, "error", err)
 		}
 
 		// get the VECTR version (side effect - check the creds as well)
 		vectrVersion, err := vectrVersionHandler.GetVersion(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
-				slog.Error("could not validate creds", "hostname", hostname, "error", err)
+				slog.ErrorContext(ctx, "could not validate creds", "hostname", hostname, "error", err)
 				os.Exit(1)
 			}
-			slog.Error("could not get vectr version", "hostname", hostname, "error", err)
+			slog.ErrorContext(ctx, "could not get vectr version", "hostname", hostname, "error", err)
 			os.Exit(1)
 		}
-		slog.Info("validated credentials and fetched vectr version", "hostname", hostname, "vectr-version", vectrVersion)
+		slog.InfoContext(ctx, "validated credentials and fetched vectr version", "hostname", hostname, "vectr-version", vectrVersion)
 		versionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(vectrVersion))
 
 		optionalParams := &vat.RestoreOptionalParams{
@@ -118,11 +118,11 @@ var restoreCmd = &cobra.Command{
 
 		// Restore the assessment
 		if err := vat.RestoreAssessment(versionContext, client, db, &assessmentData, optionalParams); err != nil {
-			slog.Error("Failed to restore assessment", "error", err)
+			slog.ErrorContext(versionContext, "Failed to restore assessment", "error", err)
 			os.Exit(1)
 		}
 
-		slog.Info("Assessment restored successfully")
+		slog.InfoContext(ctx, "Assessment restored successfully")
 	},
 }
 

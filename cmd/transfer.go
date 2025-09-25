@@ -44,59 +44,59 @@ var transferCmd = &cobra.Command{
 		// Read source credentials
 		sourceCredentials, err := os.ReadFile(sourceCredentialsFile)
 		if err != nil {
-			slog.Error("Failed to read source credentials file", "error", err)
+			slog.ErrorContext(ctx, "Failed to read source credentials file", "error", err)
 			os.Exit(1)
 		}
 
 		// Read target credentials
 		targetCredentials, err := os.ReadFile(targetCredentialsFile)
 		if err != nil {
-			slog.Error("Failed to read target credentials file", "error", err)
+			slog.ErrorContext(ctx, "Failed to read target credentials file", "error", err)
 			os.Exit(1)
 		}
 
 		// Set up the source VECTR client
 		sourceClient, sourceVectrVersionHandler, err := util.SetupVectrClient(sourceHostname, strings.TrimSpace(string(sourceCredentials)), tlsParams)
 		if err != nil {
-			slog.Error("could not set up connection to vectr", "hostname", hostname, "error", err)
+			slog.ErrorContext(ctx, "could not set up connection to vectr", "hostname", hostname, "error", err)
 		}
 
 		// get the VECTR version (side effect - check the creds as well)
 		sourceVectrVersion, err := sourceVectrVersionHandler.GetVersion(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
-				slog.Error("could not validate source creds", "src-hostname", sourceHostname, "error", err)
+				slog.ErrorContext(ctx, "could not validate source creds", "src-hostname", sourceHostname, "error", err)
 				os.Exit(1)
 			}
-			slog.Error("could not get srouce vectr version", "src-hostname", sourceHostname, "error", err)
+			slog.ErrorContext(ctx, "could not get srouce vectr version", "src-hostname", sourceHostname, "error", err)
 			os.Exit(1)
 		}
-		slog.Info("validated credentials and fetched vectr version from source", "src-hostname", sourceHostname, "src-vectr-version", sourceVectrVersion)
+		slog.InfoContext(ctx, "validated credentials and fetched vectr version from source", "src-hostname", sourceHostname, "src-vectr-version", sourceVectrVersion)
 		sourceVersionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(sourceVectrVersion))
 
 		// Set up the target VECTR client
 		targetClient, targetVectrVersionHandler, err := util.SetupVectrClient(targetHostname, strings.TrimSpace(string(targetCredentials)), tlsParams)
 		if err != nil {
-			slog.Error("could not set up connection to vectr", "hostname", targetHostname, "error", err)
+			slog.ErrorContext(ctx, "could not set up connection to vectr", "hostname", targetHostname, "error", err)
 		}
 		// get the VECTR version (side effect - check the creds as well)
 		targetVectrVersion, err := targetVectrVersionHandler.GetVersion(ctx)
 		if err != nil {
 			if err == util.ErrInvalidAuth {
-				slog.Error("could not validate creds", "hostname", targetHostname, "error", err)
+				slog.ErrorContext(ctx, "could not validate creds", "hostname", targetHostname, "error", err)
 				os.Exit(1)
 			}
-			slog.Error("could not get vectr version", "hostname", targetHostname, "error", err)
+			slog.ErrorContext(ctx, "could not get vectr version", "hostname", targetHostname, "error", err)
 			os.Exit(1)
 		}
-		slog.Info("validated credentials and fetched vectr version", "hostname", targetHostname, "vectr-version", targetVectrVersion)
+		slog.InfoContext(ctx, "validated credentials and fetched vectr version", "hostname", targetHostname, "vectr-version", targetVectrVersion)
 		targetVersionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(targetVectrVersion))
 
 		// Fetch the assessment data from the source instance
-		slog.Info("Fetching assessment data from source instance", "hostname", sourceHostname, "db", sourceDB)
+		slog.InfoContext(sourceVersionContext, "Fetching assessment data from source instance", "hostname", sourceHostname, "db", sourceDB)
 		assessmentData, err := vat.SaveAssessmentData(sourceVersionContext, sourceClient, sourceDB, assessmentName)
 		if err != nil {
-			slog.Error("Failed to fetch assessment data from source instance", "error", err)
+			slog.ErrorContext(sourceVersionContext, "Failed to fetch assessment data from source instance", "error", err)
 			os.Exit(1)
 		}
 
@@ -105,13 +105,13 @@ var transferCmd = &cobra.Command{
 			OverrideAssessmentTemplate: overrideAssessmentTemplate,
 		}
 		// Transfer the assessment data to the target instance
-		slog.Info("Transferring assessment data to target instance", "hostname", targetHostname, "db", targetDB)
+		slog.InfoContext(targetVersionContext, "Transferring assessment data to target instance", "hostname", targetHostname, "db", targetDB)
 		if err := vat.RestoreAssessment(targetVersionContext, targetClient, targetDB, assessmentData, optionalParams); err != nil {
-			slog.Error("Failed to transfer assessment data to target instance", "error", err)
+			slog.ErrorContext(targetVersionContext, "Failed to transfer assessment data to target instance", "error", err)
 			os.Exit(1)
 		}
 
-		slog.Info("Assessment transferred successfully")
+		slog.InfoContext(ctx, "Assessment transferred successfully")
 	},
 }
 

@@ -125,7 +125,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	// Step 1: Check if the organizations are in the new instance, error if not
 
-	slog.Info("Starting RestoreAssessment",
+	slog.InfoContext(ctx, "Starting RestoreAssessment",
 		"db", db,
 		"assessment_name", ad.Assessment.Name,
 		"organization_count", len(ad.Organizations),
@@ -141,11 +141,11 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	}
 
 	if ad.Metadata.LoadData.VectrVersion != TAGGED_VECTR_VERSION {
-		slog.Warn("VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", ad.Metadata.LoadData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION)
+		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", ad.Metadata.LoadData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION)
 	}
 
 	if ad.Metadata.SaveData != nil && ad.Metadata.SaveData.VectrVersion != ad.Metadata.LoadData.VectrVersion {
-		slog.Warn("Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Metadata.SaveData.VectrVersion, "live-vectr-version", ad.Metadata.LoadData.VectrVersion)
+		slog.WarnContext(ctx, "Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Metadata.SaveData.VectrVersion, "live-vectr-version", ad.Metadata.LoadData.VectrVersion)
 	}
 
 	missing_orgs := []string{}
@@ -154,7 +154,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		r, err := dao.FindOrganization(ctx, client, o)
 		if err != nil {
 			if gqlObject, ok := gqlErrParse(err); ok {
-				slog.Error("detailed error", "error", gqlObject)
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 			}
 			if ad.OptionalFields.OrgMap != nil {
 				om := ad.OptionalFields.OrgMap[o]
@@ -170,7 +170,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		}
 		org_map[r.Organizations.Nodes[0].Name] = r.Organizations.Nodes[0]
 	}
-	slog.Debug("Validating organizations",
+	slog.DebugContext(ctx, "Validating organizations",
 		"total", len(ad.Organizations),
 		"missing_orgs", missing_orgs)
 	if len(missing_orgs) > 0 {
@@ -178,7 +178,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		if ad.OptionalFields.OrgMap != nil {
 			for _, org := range missing_orgs {
 				om := ad.OptionalFields.OrgMap[org]
-				slog.Error("missing organization", "name", om.Name, "abbreviation", om.Abbreviation, "desc", om.Description, "url", om.Url)
+				slog.ErrorContext(ctx, "missing organization", "name", om.Name, "abbreviation", om.Abbreviation, "desc", om.Description, "url", om.Url)
 			}
 		}
 		return fmt.Errorf("these orgs are missing from your instance: %s: %w", strings.Join(missing_orgs, ","), ErrOrgNotFound)
@@ -189,7 +189,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	instance_tools, err := dao.GetAllDefenseTools(ctx, client, db)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
-			slog.Error("detailed error", "error", gqlObject)
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 		}
 		return fmt.Errorf("could not fetch tools: %w", err)
 	}
@@ -197,7 +197,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	tool_map := make(map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(ad.ToolsMap))
 
 	missing_tools := []GenericBlueTool{}
-	slog.Debug("Validating tools",
+	slog.DebugContext(ctx, "Validating tools",
 		"total", len(ad.ToolsMap))
 	for name, tool := range ad.ToolsMap {
 		found := false
@@ -214,7 +214,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	}
 	if len(missing_tools) > 0 {
 		for _, missing_tool := range missing_tools {
-			slog.Error("Missing tool in target database",
+			slog.ErrorContext(ctx, "Missing tool in target database",
 				"db", db,
 				"tool-name", missing_tool.Name,
 				"product (optional)", missing_tool.ProductName,
@@ -225,14 +225,14 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	}
 
 	if optionalParams.AssessmentName != "" {
-		slog.Debug("overiding assessment name", "old-assessment-name", ad.Assessment.Name, "new-assessment-name", optionalParams.AssessmentName)
+		slog.DebugContext(ctx, "overiding assessment name", "old-assessment-name", ad.Assessment.Name, "new-assessment-name", optionalParams.AssessmentName)
 		ad.Assessment.Name = optionalParams.AssessmentName
 	}
 
 	lookup_assessments, err := dao.FindExistingAssessment(ctx, client, db, ad.Assessment.Name)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
-			slog.Error("detailed error", "error", gqlObject)
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 		}
 		return fmt.Errorf("could not fetch data about assessment %s, error: %w", ad.Assessment.Name, err)
 	}
@@ -244,7 +244,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	// If the user wants to ignore error, go ahead and import template test cases
 	// If no template name, then go ahead and add template test cases in
 	if optionalParams.OverrideAssessmentTemplate {
-		slog.Debug("adding template test cases directly")
+		slog.DebugContext(ctx, "adding template test cases directly")
 		input := dao.CreateTestCaseTemplateInput{
 			Overwrite:            true,
 			TestCaseTemplateData: []dao.CreateTestCaseTemplateDataInput{},
@@ -252,26 +252,26 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 		if len(ad.LibraryTestCases) > 0 {
 			for _, template_test_case := range ad.LibraryTestCases {
-				slog.Debug("library test case", "name", template_test_case.Name, "template_id", template_test_case.LibraryTestCaseId)
+				slog.DebugContext(ctx, "library test case", "name", template_test_case.Name, "template_id", template_test_case.LibraryTestCaseId)
 				input.TestCaseTemplateData = append(input.TestCaseTemplateData, createTemplateData(template_test_case))
 			}
 
 			_, err := dao.CreateTemplateTestCases(ctx, client, input)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.Error("full gql error", "error", gqlObject)
+					slog.ErrorContext(ctx, "full gql error", "error", gqlObject)
 				}
 
 				return fmt.Errorf("could not write template test cases: %w", err)
 			}
-			slog.Info("inserted all library test cases", "total", len(input.TestCaseTemplateData))
+			slog.InfoContext(ctx, "inserted all library test cases", "total", len(input.TestCaseTemplateData))
 		} else {
-			slog.Info("No library test cases found", "assessment-name", ad.Assessment.Name)
+			slog.InfoContext(ctx, "No library test cases found", "assessment-name", ad.Assessment.Name)
 		}
 
 	} else {
 		if ad.TemplateAssessment != "" {
-			slog.Debug("Validating template assessment in instance",
+			slog.DebugContext(ctx, "Validating template assessment in instance",
 				"template_assessment", ad.TemplateAssessment,
 				"override_template", optionalParams.OverrideAssessmentTemplate)
 			prefix := ""
@@ -284,13 +284,13 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			t, err := dao.FindLibraryAssessment(ctx, client, prefix+ad.TemplateAssessment)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.Error("detailed error", "error", gqlObject)
+					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 				}
 				return fmt.Errorf("could not fetch library assessment for %s: %w", ad.TemplateAssessment, err)
 			}
 			// if the defined library assessment does not exist, check to see if we have all library test cases
 			if len(t.LibraryAssessments.Nodes) == 0 {
-				slog.Warn("Could not find library assessment, but checking all the test cases.", "template_assessment", ad.TemplateAssessment)
+				slog.WarnContext(ctx, "Could not find library assessment, but checking all the test cases.", "template_assessment", ad.TemplateAssessment)
 			}
 		}
 		// now let's check the actual data
@@ -309,7 +309,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				// the error type we expect only has one entry for this path
 				if !(len(gqlerrlist) == 1 && gqlerrlist[0].Path.String() == "libraryTestcasesByIds") {
 					if gqlObject, ok := gqlErrParse(err); ok {
-						slog.Error("detailed error", "error", gqlObject)
+						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 					}
 					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
 				}
@@ -317,7 +317,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				rawids, ok := gqlerrlist[0].Extensions["ids"]
 				if !ok {
 					if gqlObject, ok := gqlErrParse(err); ok {
-						slog.Error("detailed error", "error", gqlObject)
+						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 					}
 					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
 				}
@@ -325,7 +325,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				ids, ok := rawids.([]any)
 				if !(ok && len(ids) == 1) {
 					if gqlObject, ok := gqlErrParse(err); ok {
-						slog.Error("detailed error", "error", gqlObject)
+						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 					}
 					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
 				}
@@ -333,7 +333,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				id := ids[0].(string)
 				if !strings.HasPrefix(id, "The following IDs were not valid") {
 					if gqlObject, ok := gqlErrParse(err); ok {
-						slog.Error("detailed error", "error", gqlObject)
+						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 					}
 					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
 				}
@@ -345,7 +345,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				missing_ids = append(missing_ids, mids...)
 			}
 			if len(missing_ids) > 0 {
-				slog.Error("could not find all the ids in the instance", "missing-ids", missing_ids)
+				slog.ErrorContext(ctx, "could not find all the ids in the instance", "missing-ids", missing_ids)
 				return fmt.Errorf("could not find all the ids in the instance, override templates to insert, missing id count: %d", len(missing_ids))
 
 			}
@@ -354,7 +354,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	}
 	// Step 4: Create the assessment
-	slog.Info("Creating assessment",
+	slog.InfoContext(ctx, "Creating assessment",
 		"assessment_name", ad.Assessment.Name)
 	assessment := &dao.CreateAssessmentInput{
 		Db: db,
@@ -381,7 +381,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	a, err := dao.CreateAssessment(ctx, client, *assessment)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
-			slog.Error("detailed error", "error", gqlObject)
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 		}
 		return fmt.Errorf("could not create assessment container: %s: %w", assessment.AssessmentData[0].Name, err)
 	}
@@ -406,13 +406,13 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		}
 		campaigns.CampaignData = append(campaigns.CampaignData, campaign)
 	}
-	slog.Debug("Creating campaigns",
+	slog.DebugContext(ctx, "Creating campaigns",
 		"count", len(campaigns.CampaignData),
 		"assessment_name", ad.Assessment.Name)
 	r, err := dao.CreateCampaigns(ctx, client, campaigns)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
-			slog.Error("detailed error", "error", gqlObject)
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 		}
 		return fmt.Errorf("could not create campaigns for %s, suggest deleting the assessment: %w", a.Assessment.Create.Assessments[0].Name, err)
 	}
@@ -424,7 +424,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		campaign_map[cdata.Name] = cdata.Id
 	}
 
-	slog.Info("Campaigns created",
+	slog.InfoContext(ctx, "Campaigns created",
 		"count", len(campaigns.CampaignData),
 		"assessment_name", ad.Assessment.Name)
 
@@ -449,7 +449,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		// if it is not, throw an error
 		for _, serialized_tc := range c.TestCases {
 			if _, ok := outcomeStatusMap[serialized_tc.Status]; !ok {
-				slog.Error("could not find outcome for this test case", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name)
+				slog.ErrorContext(ctx, "could not find outcome for this test case", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name)
 				return fmt.Errorf("outcome %s not found", serialized_tc.Status)
 			}
 			testCaseData := dao.CreateTestCaseDataInput{
@@ -544,7 +544,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 			}
 		}
-		slog.Debug("Creating test cases",
+		slog.DebugContext(ctx, "Creating test cases",
 			"campaign_name", c.Name,
 			"test_case_count", len(tc_with_library.CreateTestCaseInputs),
 			"test-case-count-no-template", len(tc_no_template.TestCaseData),
@@ -553,7 +553,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			_, err := dao.CreateTestCasesByLibraryId(ctx, client, tc_with_library)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.Error("detailed error", "error", gqlObject)
+					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 				}
 				return fmt.Errorf("could not write test cases for %s, campaign: %s; check vectr version: %w", ad.Assessment.Name, c.Name, err)
 			}
@@ -563,14 +563,14 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			_, err := dao.CreateTestCasesNoTemplate(ctx, client, tc_no_template)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.Error("detailed error", "error", gqlObject)
+					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 				}
 				return fmt.Errorf("could not write test cases for %s: %w", ad.Assessment.Name, err)
 			}
 			testCaseCount += len(tc_with_library.CreateTestCaseInputs)
 		}
 	}
-	slog.Info("Test cases created", "assessment-name", ad.Assessment.Name, "test-case-count", testCaseCount)
+	slog.InfoContext(ctx, "Test cases created", "assessment-name", ad.Assessment.Name, "test-case-count", testCaseCount)
 
 	return nil
 
