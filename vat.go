@@ -46,7 +46,9 @@ type AssessmentData struct {
 	IdToolsMap         map[string]GenericBlueTool
 	Metadata           *VatMetadata
 	OptionalFields     struct { // these fields will never be required on the restore side, so can be added to without changing the major version of the application
-		OrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+		OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+		BundleID     string
+		BundlePrefix string
 	}
 }
 

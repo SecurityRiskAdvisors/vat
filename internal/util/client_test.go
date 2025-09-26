@@ -251,7 +251,7 @@ func TestVectrVersionHandler(t *testing.T) {
 				versionHandler.versionPath.RawQuery = q.Encode()
 			}
 
-			version, err := versionHandler.Get(context.Background())
+			version, err := versionHandler.GetVersion(context.Background())
 
 			if tc.expectErr {
 				if err == nil {

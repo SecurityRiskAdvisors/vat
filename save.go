@@ -38,14 +38,16 @@ var ErrTooManyAssessmentsFound = fmt.Errorf("more than one assessment matched")
 //   - Returns `ErrTooManyAssessmentsFound` if more than one assessment matches the given name.
 //   - Returns a wrapped error with additional context if any GraphQL query fails.
 func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, assessment_name string) (*AssessmentData, error) {
-	slog.Info("Starting SaveAssessmentData",
+	slog.InfoContext(ctx, "Starting SaveAssessmentData",
 		"db", db,
 		"assessment_name", assessment_name)
 	data := &AssessmentData{
 		ToolsMap:   map[string]GenericBlueTool{},
 		IdToolsMap: map[string]GenericBlueTool{},
 		OptionalFields: struct {
-			OrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+			OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+			BundleID     string
+			BundlePrefix string
 		}{
 			OrgMap: make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 		},
@@ -55,18 +57,18 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 	}
 
 	if data.Metadata.SaveData.VectrVersion != TAGGED_VECTR_VERSION {
-		slog.Warn("VECTR version mismatch, this version of vat was built for another version of VECTR", "saved-data-version", data.Metadata.SaveData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION, "vat-version", data.Metadata.SaveData.Version)
+		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "saved-data-version", data.Metadata.SaveData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION, "vat-version", data.Metadata.SaveData.Version)
 	}
 
 	assessment, err := dao.GetAllAssessments(ctx, client, db, assessment_name)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
-			slog.Error("detailed error", "error", gqlObject)
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 		}
 		return nil, fmt.Errorf("could not fetch assessment from instance: %w", err)
 	}
 
-	slog.Debug("Fetched assessments",
+	slog.DebugContext(ctx, "Fetched assessments",
 		"count", len(assessment.Assessments.Nodes),
 		"db", db)
 	if len(assessment.Assessments.Nodes) == 0 {
@@ -113,10 +115,39 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 	}
 
 	// check if there is a library assessment (bundle) to use
+	completionProgress := map[string]bool{
+		"bundle": false,
+		"prefix": false,
+	}
 	for _, metadata := range data.Assessment.Metadata {
 		if metadata.Key == "bundle" {
 			data.TemplateAssessment = metadata.Value
+			completionProgress["bundle"] = true
+		}
+		if metadata.Key == "prefix" {
+			data.OptionalFields.BundlePrefix = metadata.Value
+			completionProgress["prefix"] = true
+		}
+		// this isn't the cleanest version, but if I have more keys I can do it that way
+		if completionProgress["bundle"] && completionProgress["prefix"] {
 			break
+		}
+	}
+	// if we could find a template assessment, then let's get the ID for it as well
+	if data.TemplateAssessment != "" {
+		var bundle_name string = data.TemplateAssessment
+		if data.OptionalFields.BundlePrefix != "" {
+			bundle_name = fmt.Sprintf("%s - %s", data.OptionalFields.BundlePrefix, data.TemplateAssessment)
+		}
+		bundleIdResponse, err := dao.GetBundleByName(ctx, client, bundle_name)
+		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+			}
+			return nil, fmt.Errorf("could not connect to get the bundle id for %s. Env: %s: %w", data.TemplateAssessment, db, err)
+		}
+		if len(bundleIdResponse.LibraryAssessments.Nodes) > 0 {
+			data.OptionalFields.BundleID = bundleIdResponse.LibraryAssessments.Nodes[0].Id //there can only be one field due to the graphql query
 		}
 	}
 
@@ -128,10 +159,10 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 		}
 		for _, tc := range c.TestCases {
 			if tc.LibraryTestCaseId != "" && tc.LibraryTestCaseId != "null" {
-				slog.Debug("Fetching library test case", "test_case_id", tc.LibraryTestCaseId)
+				slog.DebugContext(ctx, "Fetching library test case", "test_case_id", tc.LibraryTestCaseId)
 				data.LibraryTestCases[tc.LibraryTestCaseId] = dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase{}
 			} else {
-				slog.Warn("Test case missing a library id", "test-case-name", tc.Name)
+				slog.WarnContext(ctx, "Test case missing a library id", "test-case-name", tc.Name)
 			}
 		}
 	}
@@ -141,7 +172,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 		r, err := dao.GetLibraryTestCases(ctx, client, ids)
 		if err != nil {
 			if gqlObject, ok := gqlErrParse(err); ok {
-				slog.Error("detailed error", "error", gqlObject)
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 			}
 			return nil, fmt.Errorf("could not fetch library test cases from: %s: %w", db, err)
 		}
@@ -151,12 +182,12 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 		}
 	}
 
-	slog.Info("Fetching defense tools",
+	slog.DebugContext(ctx, "Fetching defense tools",
 		"db", db)
 	btr, err := dao.GetAllDefenseTools(ctx, client, db)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
-			slog.Error("detailed error", "error", gqlObject)
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 		}
 		return nil, fmt.Errorf("could not connect to fetch blue tools for %s: %w", db, err)
 	}
@@ -197,7 +228,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 
 	// get a unique list of the orgs
 	data.Organizations = slices.Collect(maps.Keys(data.OptionalFields.OrgMap))
-	slog.Info("Writing vat header", "date", data.Metadata.SaveData.Date, "vat-version", data.Metadata.SaveData.Version)
+	slog.InfoContext(ctx, "Finished dumping assessment", "date", data.Metadata.SaveData.Date, "vat-version", data.Metadata.SaveData.Version, "assessment-name", data.Assessment.Name, "db", db)
 
 	return data, nil
 

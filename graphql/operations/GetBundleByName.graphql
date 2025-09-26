@@ -1,0 +1,9 @@
+query GetBundleByName($bundleName: String) {
+  libraryAssessments(filter: {
+    name: {eq: $bundleName}
+  }, first: 1) {
+    nodes {
+      id
+    }
+  }
+}
