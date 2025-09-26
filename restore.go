@@ -53,6 +53,54 @@ var outcomeStatusMap map[string]dao.TestCaseStatus = map[string]dao.TestCaseStat
 	"Not Performed":                        dao.TestCaseStatusNotperformed,
 }
 
+type LibraryTestCaseIdIndex string
+
+// This is an object that will handle creating objects for
+type GroupedCreateTestCaseWithLibraryIdInput struct {
+	Base      dao.CreateTestCaseMatchByLibraryIdInput
+	TestCases map[LibraryTestCaseIdIndex][]dao.CreateTestCaseDataWithLibraryIdInput
+}
+
+func (g *GroupedCreateTestCaseWithLibraryIdInput) Add(tcd dao.CreateTestCaseDataWithLibraryIdInput) {
+	if _, ok := g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)]; !ok {
+		g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)] = make([]dao.CreateTestCaseDataWithLibraryIdInput, 0, 5)
+	}
+
+	g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)] = append(g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)], tcd)
+}
+
+func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.CreateTestCaseMatchByLibraryIdInput {
+	maxSize := 0
+
+	for _, testcases := range g.TestCases {
+		if len(testcases) > maxSize {
+			maxSize = len(testcases)
+		}
+	}
+
+	if maxSize == 0 {
+		return nil
+	}
+
+	results := make([]dao.CreateTestCaseMatchByLibraryIdInput, 0, maxSize)
+
+	for i := 0; i < maxSize; i++ {
+		var obj dao.CreateTestCaseMatchByLibraryIdInput
+		obj.Db = g.Base.Db
+		obj.CampaignId = g.Base.CampaignId
+		obj.CreateTestCaseInputs = []dao.CreateTestCaseDataWithLibraryIdInput{}
+		for _, testcases := range g.TestCases {
+			if len(testcases) > (i + 1) {
+				obj.CreateTestCaseInputs = append(obj.CreateTestCaseInputs, testcases[i])
+			} else {
+				continue
+			}
+		}
+		results = append(results, obj)
+	}
+	return results
+}
+
 // RestoreAssessment restores an assessment to a VECTR instance by deserializing
 // and importing serialized assessment data. It ensures that all required
 // organizations, tools, and templates exist in the target instance before
