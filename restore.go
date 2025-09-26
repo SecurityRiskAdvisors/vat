@@ -53,9 +53,21 @@ var outcomeStatusMap map[string]dao.TestCaseStatus = map[string]dao.TestCaseStat
 	"Not Performed":                        dao.TestCaseStatusNotperformed,
 }
 
+func NewGroupedCreateTestCaseWithLibraryIdInput(td dao.CreateTestCaseMatchByLibraryIdInput) *GroupedCreateTestCaseWithLibraryIdInput {
+	return &GroupedCreateTestCaseWithLibraryIdInput{
+		Base: dao.CreateTestCaseMatchByLibraryIdInput{
+			Db:         td.Db,
+			CampaignId: td.CampaignId,
+		},
+		TestCases: make(map[LibraryTestCaseIdIndex][]dao.CreateTestCaseDataWithLibraryIdInput),
+	}
+}
+
 type LibraryTestCaseIdIndex string
 
-// This is an object that will handle creating objects for
+// This is an object that will handle creating objects for campaigns, instead of the default
+// This allows us to split out the requests so we don't have one requests with multiple library
+// test case ids
 type GroupedCreateTestCaseWithLibraryIdInput struct {
 	Base      dao.CreateTestCaseMatchByLibraryIdInput
 	TestCases map[LibraryTestCaseIdIndex][]dao.CreateTestCaseDataWithLibraryIdInput
@@ -67,6 +79,16 @@ func (g *GroupedCreateTestCaseWithLibraryIdInput) Add(tcd dao.CreateTestCaseData
 	}
 
 	g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)] = append(g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)], tcd)
+}
+
+func (g *GroupedCreateTestCaseWithLibraryIdInput) Len() int {
+	size := 0
+
+	for _, tcs := range g.TestCases {
+		size += len(tcs)
+	}
+
+	return size
 }
 
 func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.CreateTestCaseMatchByLibraryIdInput {
@@ -90,7 +112,7 @@ func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.Cr
 		obj.CampaignId = g.Base.CampaignId
 		obj.CreateTestCaseInputs = []dao.CreateTestCaseDataWithLibraryIdInput{}
 		for _, testcases := range g.TestCases {
-			if len(testcases) > (i + 1) {
+			if len(testcases) > (i) {
 				obj.CreateTestCaseInputs = append(obj.CreateTestCaseInputs, testcases[i])
 			} else {
 				continue
@@ -480,11 +502,11 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	testCaseCount := 0
 	for _, c := range ad.Assessment.Campaigns {
 		// there could be a mix of test case types in a campaign, so add both types in
-		tc_with_library := dao.CreateTestCaseMatchByLibraryIdInput{
+		tc_with_library := NewGroupedCreateTestCaseWithLibraryIdInput(dao.CreateTestCaseMatchByLibraryIdInput{
 			Db:                   db,
 			CampaignId:           campaign_map[c.Name],
 			CreateTestCaseInputs: []dao.CreateTestCaseDataWithLibraryIdInput{},
-		}
+		})
 
 		tc_no_template := dao.CreateTestCaseWithoutTemplateInput{
 			Db:           db,
@@ -588,24 +610,28 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 					CreateNewIfNotExists: false,
 					TestCaseData:         testCaseData,
 				}
-				tc_with_library.CreateTestCaseInputs = append(tc_with_library.CreateTestCaseInputs, tcd)
-
+				tc_with_library.Add(tcd)
 			}
 		}
 		slog.DebugContext(ctx, "Creating test cases",
 			"campaign_name", c.Name,
-			"test_case_count", len(tc_with_library.CreateTestCaseInputs),
+			"test_case_count", tc_with_library.Len(),
 			"test-case-count-no-template", len(tc_no_template.TestCaseData),
 			"assessment_name", ad.Assessment.Name)
-		if len(tc_with_library.CreateTestCaseInputs) > 0 {
-			_, err := dao.CreateTestCasesByLibraryId(ctx, client, tc_with_library)
-			if err != nil {
-				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		slog.WarnContext(ctx, "tc_with_library_len", "len", tc_with_library.Len())
+		if tc_with_library.Len() > 0 {
+			inserts := tc_with_library.GenerateInsertsData()
+			slog.WarnContext(ctx, "dumping insert data", "data", inserts)
+			for _, insertdata := range inserts {
+				_, err := dao.CreateTestCasesByLibraryId(ctx, client, insertdata)
+				if err != nil {
+					if gqlObject, ok := gqlErrParse(err); ok {
+						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+					}
+					return fmt.Errorf("could not write test cases for %s, campaign: %s; check vectr version: %w", ad.Assessment.Name, c.Name, err)
 				}
-				return fmt.Errorf("could not write test cases for %s, campaign: %s; check vectr version: %w", ad.Assessment.Name, c.Name, err)
+				testCaseCount += len(insertdata.CreateTestCaseInputs)
 			}
-			testCaseCount += len(tc_with_library.CreateTestCaseInputs)
 		}
 		if len(tc_no_template.TestCaseData) > 0 {
 			_, err := dao.CreateTestCasesNoTemplate(ctx, client, tc_no_template)
@@ -615,7 +641,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				}
 				return fmt.Errorf("could not write test cases for %s: %w", ad.Assessment.Name, err)
 			}
-			testCaseCount += len(tc_with_library.CreateTestCaseInputs)
+			testCaseCount += len(tc_no_template.TestCaseData)
 		}
 	}
 	slog.InfoContext(ctx, "Test cases created", "assessment-name", ad.Assessment.Name, "test-case-count", testCaseCount)
