@@ -618,10 +618,8 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			"test_case_count", tc_with_library.Len(),
 			"test-case-count-no-template", len(tc_no_template.TestCaseData),
 			"assessment_name", ad.Assessment.Name)
-		slog.WarnContext(ctx, "tc_with_library_len", "len", tc_with_library.Len())
 		if tc_with_library.Len() > 0 {
 			inserts := tc_with_library.GenerateInsertsData()
-			slog.WarnContext(ctx, "dumping insert data", "data", inserts)
 			for _, insertdata := range inserts {
 				_, err := dao.CreateTestCasesByLibraryId(ctx, client, insertdata)
 				if err != nil {
