@@ -19,8 +19,9 @@ import (
 )
 
 var (
-	inputFile      string
-	passphraseFile string
+	inputFile          string
+	passphraseFile     string
+	sourceCampaignName string
 )
 
 // Create a restore subcommand
@@ -111,18 +112,30 @@ var restoreCmd = &cobra.Command{
 		slog.InfoContext(ctx, "validated credentials and fetched vectr version", "hostname", hostname, "vectr-version", vectrVersion)
 		versionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(vectrVersion))
 
-		optionalParams := &vat.RestoreOptionalParams{
-			AssessmentName:             targetAssessmentName,
-			OverrideAssessmentTemplate: overrideAssessmentTemplate,
-		}
+		if sourceCampaignName == "" {
+			optionalParams := &vat.RestoreOptionalParams{
+				AssessmentName:             targetAssessmentName,
+				OverrideAssessmentTemplate: overrideAssessmentTemplate,
+			}
 
-		// Restore the assessment
-		if err := vat.RestoreAssessment(versionContext, client, db, &assessmentData, optionalParams); err != nil {
-			slog.ErrorContext(versionContext, "Failed to restore assessment", "error", err)
-			os.Exit(1)
+			// Restore the assessment
+			if err := vat.RestoreAssessment(versionContext, client, db, &assessmentData, optionalParams); err != nil {
+				slog.ErrorContext(versionContext, "Failed to restore assessment", "error", err)
+				os.Exit(1)
+			}
+			slog.InfoContext(ctx, "Assessment restored successfully")
+		} else {
+			if targetAssessmentName == "" {
+				slog.ErrorContext(ctx, "--target-assessment-name is required when using --source-campaign-name")
+				os.Exit(1)
+			}
+			slog.InfoContext(ctx, "Restoring campaign", "source-campaign", sourceCampaignName, "target-assessment", targetAssessmentName)
+			if err := vat.RestoreCampaign(versionContext, client, db, &assessmentData, sourceCampaignName, targetAssessmentName); err != nil {
+				slog.ErrorContext(versionContext, "Failed to restore campaign", "error", err)
+				os.Exit(1)
+			}
+			slog.InfoContext(ctx, "Campaign restored successfully")
 		}
-
-		slog.InfoContext(ctx, "Assessment restored successfully")
 	},
 }
 
@@ -134,8 +147,9 @@ func init() {
 	restoreCmd.Flags().StringVar(&credentialsFile, "vectr-creds-file", "", "Path to the credentials file (required)")
 	restoreCmd.Flags().StringVar(&inputFile, "input-file", "", "Path to the encrypted input file (required)")
 	restoreCmd.Flags().StringVar(&passphraseFile, "passphrase-file", "", "Path to the file containing the decryption passphrase")
-	restoreCmd.Flags().StringVar(&targetAssessmentName, "target-assessment-name", "", "The assessment name to set in the new instance")
+	restoreCmd.Flags().StringVar(&targetAssessmentName, "target-assessment-name", "", "The assessment name to set in the new instance. Required when using --source-campaign-name.")
 	restoreCmd.Flags().BoolVar(&overrideAssessmentTemplate, "override-template-assessment", false, "Override any set template name in the serialized data and load template test cases anyway")
+	restoreCmd.Flags().StringVar(&sourceCampaignName, "source-campaign-name", "", "Name of a specific campaign to restore from the input file. If set, --target-assessment-name must be an existing assessment.")
 
 	// Mark flags as required
 	restoreCmd.MarkFlagsOneRequired("db", "env")
