@@ -197,25 +197,24 @@ func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.Cr
 // exist in the target VECTR instance.
 // It returns a map of organization names to their VECTR objects, a map of tool names to their VECTR objects,
 // and an error if any prerequisite is not met.
-func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db string, ad *AssessmentData) (map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, error) {
+func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db string, orgNames []string, toolsToValidate map[string]GenericBlueTool, optionalOrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganization) (map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, error) {
 	slog.InfoContext(ctx, "Starting restore prerequisites validation",
 		"db", db,
-		"assessment_name", ad.Assessment.Name,
-		"organization_count", len(ad.Organizations),
-		"tool_count", len(ad.ToolsMap),
+		"organization_count", len(orgNames),
+		"tool_count", len(toolsToValidate),
 	)
 
 	// Step 1: Check if the organizations are in the new instance, error if not
 	missing_orgs := []string{}
 	org_map := make(map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization)
-	for _, o := range ad.Organizations {
+	for _, o := range orgNames {
 		r, err := dao.FindOrganization(ctx, client, o)
 		if err != nil {
 			if gqlObject, ok := gqlErrParse(err); ok {
 				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 			}
-			if ad.OptionalFields.OrgMap != nil {
-				om := ad.OptionalFields.OrgMap[o]
+			if optionalOrgMap != nil {
+				om := optionalOrgMap[o]
 				return nil, nil, fmt.Errorf("could not fetch organization: %s, %s, %s, %s: %w", om.Name, om.Abbreviation, om.Description, om.Url, err)
 
 			} else {
@@ -229,13 +228,13 @@ func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db
 		org_map[r.Organizations.Nodes[0].Name] = r.Organizations.Nodes[0]
 	}
 	slog.DebugContext(ctx, "Validating organizations",
-		"total", len(ad.Organizations),
+		"total", len(orgNames),
 		"missing_orgs", missing_orgs)
 	if len(missing_orgs) > 0 {
 		// if the fields exist, then let's print em
-		if ad.OptionalFields.OrgMap != nil {
+		if optionalOrgMap != nil {
 			for _, org := range missing_orgs {
-				om := ad.OptionalFields.OrgMap[org]
+				om := optionalOrgMap[org]
 				slog.ErrorContext(ctx, "missing organization", "name", om.Name, "abbreviation", om.Abbreviation, "desc", om.Description, "url", om.Url)
 			}
 		}
@@ -251,11 +250,11 @@ func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db
 		return nil, nil, fmt.Errorf("could not fetch tools: %w", err)
 	}
 
-	tool_map := make(map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(ad.ToolsMap))
+	tool_map := make(map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(toolsToValidate))
 	missing_tools := []GenericBlueTool{}
 	slog.DebugContext(ctx, "Validating tools",
-		"total", len(ad.ToolsMap))
-	for name, tool := range ad.ToolsMap {
+		"total", len(toolsToValidate))
+	for name, tool := range toolsToValidate {
 		found := false
 		for _, instance_tool := range instance_tools.Bluetools.Nodes {
 			if name == instance_tool.Name {
@@ -494,7 +493,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		slog.WarnContext(ctx, "Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Metadata.SaveData.VectrVersion, "live-vectr-version", ad.Metadata.LoadData.VectrVersion)
 	}
 
-	org_map, tool_map, err := validateRestorePrerequisites(ctx, client, db, ad)
+	org_map, tool_map, err := validateRestorePrerequisites(ctx, client, db, ad.Organizations, ad.ToolsMap, ad.OptionalFields.OrgMap)
 	if err != nil {
 		return err
 	}
@@ -675,11 +674,6 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, sourceCampaignName, targetAssessmentName string) error {
 	slog.InfoContext(ctx, "Starting RestoreCampaign", "db", db, "source_campaign", sourceCampaignName, "target_assessment", targetAssessmentName)
 
-	org_map, tool_map, err := validateRestorePrerequisites(ctx, client, db, ad)
-	if err != nil {
-		return err
-	}
-
 	var campaignToRestore dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign
 	found := false
 	for _, c := range ad.Assessment.Campaigns {
@@ -701,6 +695,38 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 		return fmt.Errorf("target assessment '%s' not found in database '%s'", targetAssessmentName, db)
 	}
 	targetAssessmentId := targetAssessment.Assessments.Nodes[0].Id
+
+	// Collect organizations for the specific campaign
+	campaignOrgNames := make([]string, 0, len(campaignToRestore.Organizations))
+	for _, org := range campaignToRestore.Organizations {
+		campaignOrgNames = append(campaignOrgNames, org.Name)
+	}
+
+	// Collect tools for the specific campaign
+	campaignToolsToValidate := make(map[string]GenericBlueTool)
+	for _, tc := range campaignToRestore.TestCases {
+		for _, outcome := range tc.DefenseToolOutcomes {
+			toolID := strconv.Itoa(outcome.DefenseToolId)
+			if tool, ok := ad.IdToolsMap[toolID]; ok {
+				campaignToolsToValidate[tool.Name] = tool
+			}
+		}
+	}
+
+	// Create a temporary optionalOrgMap for the specific campaign's organizations
+	campaignOptionalOrgMap := make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganization)
+	if ad.OptionalFields.OrgMap != nil {
+		for _, orgName := range campaignOrgNames {
+			if orgDetail, ok := ad.OptionalFields.OrgMap[orgName]; ok {
+				campaignOptionalOrgMap[orgName] = orgDetail
+			}
+		}
+	}
+
+	org_map, tool_map, err := validateRestorePrerequisites(ctx, client, db, campaignOrgNames, campaignToolsToValidate, campaignOptionalOrgMap)
+	if err != nil {
+		return err
+	}
 
 	return restoreCampaigns(ctx, client, db, targetAssessmentId, targetAssessmentName, []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign{campaignToRestore}, org_map, tool_map, ad.IdToolsMap)
 }
