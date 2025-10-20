@@ -77,7 +77,8 @@ Restore assessment data to a VECTR instance from an encrypted, compressed file:
 - `--client-cert-file`: Path to the client certificate file for mTLS.
 - `--client-key-file`: Path to the client key file for mTLS.
 - `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs).
-- `--target-assessment-name`: Overrides the name of the assessment being restored in the target instance.
+- `--target-assessment-name`: Overrides the name of the assessment being restored in the target instance. Required when using `--source-campaign-name`.
+- `--source-campaign-name`: Name of a specific campaign to restore from the input file. If set, `--target-assessment-name` must be an existing assessment.
 - `--override-template-assessment`: Overrides any set template name in the serialized data and loads template test cases anyway.
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
 - `--client-cert-file`: Path to the client certificate file for mTLS.
@@ -146,6 +147,23 @@ Transfer an assessment from one VECTR instance directly to another:
 - `--client-cert-file`: Path to the client certificate file for mTLS. (will be applied for both source and dest)
 - `--client-key-file`: Path to the client key file for mTLS. (will be applied for both source and dest)
 - `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs). (will be applied for both source and dest)
+- `--target-assessment-name`: Overrides the name of the assessment in the target instance. Required when using `--source-campaign-name`.
+- `--source-campaign-name`: Name of a specific campaign to transfer. If set, `--target-assessment-name` must be an existing assessment.
+
+### Restoring or Transferring a Single Campaign
+
+The `restore` and `transfer` commands support moving a single campaign from a source assessment into an existing target assessment. This is useful for merging campaigns or moving specific parts of an assessment without transferring the entire thing.
+
+To do this, use the `--source-campaign-name` flag to specify which campaign to move. When using this flag, you must also provide `--target-assessment-name` with the name of an *existing* assessment on the target VECTR instance. The campaign will then be restored or transferred into that assessment.
+
+#### Example using `restore`
+
+First, save a full assessment that contains the campaign you want to move. Then, restore a single campaign from that file into an existing assessment:
+```bash
+./vat restore --hostname <target-hostname> --env <target-env> --source-campaign-name "Campaign A" --target-assessment-name "Existing Target Assessment" --input-file assessment.vat ...
+```
+
+A similar approach works for the `transfer` command.
 
 ### Diagnostic Command
 
