@@ -191,6 +191,7 @@ func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.Cr
 //   - Invalid or blank assessment name overrides (`ErrInvalidAssessmentName`).
 //   - GraphQL API errors during organization, tool, template, assessment,
 //     campaign, or test case creation.
+//
 // validateRestorePrerequisites checks if organizations and tools required for the assessment restore
 // exist in the target VECTR instance.
 // It returns a map of organization names to their VECTR objects, a map of tool names to their VECTR objects,
@@ -282,7 +283,7 @@ func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db
 
 // restoreCampaigns moves the campaign and test case creation logic into its own function.
 // It creates campaigns for a given assessment and then creates the test cases within those campaigns.
-func restoreCampaigns(ctx context.Context, client graphql.Client, db string, assessmentId string, assessmentName string, campaignsToRestore []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaignConnectionNodesCampaign, orgMap map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, toolMap map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, idToolsMap map[string]GenericBlueTool) error {
+func restoreCampaigns(ctx context.Context, client graphql.Client, db string, assessmentId string, assessmentName string, campaignsToRestore []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign, orgMap map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, toolMap map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, idToolsMap map[string]GenericBlueTool) error {
 	// Step 5: Create the campaigns
 	campaigns := dao.CreateCampaignInput{
 		Db:           db,
