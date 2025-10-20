@@ -191,33 +191,19 @@ func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.Cr
 //   - Invalid or blank assessment name overrides (`ErrInvalidAssessmentName`).
 //   - GraphQL API errors during organization, tool, template, assessment,
 //     campaign, or test case creation.
-func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, optionalParams *RestoreOptionalParams) error {
-
-	// Step 1: Check if the organizations are in the new instance, error if not
-
-	slog.InfoContext(ctx, "Starting RestoreAssessment",
+// validateRestorePrerequisites checks if organizations and tools required for the assessment restore
+// exist in the target VECTR instance.
+// It returns a map of organization names to their VECTR objects, a map of tool names to their VECTR objects,
+// and an error if any prerequisite is not met.
+func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db string, ad *AssessmentData) (map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, error) {
+	slog.InfoContext(ctx, "Starting restore prerequisites validation",
 		"db", db,
 		"assessment_name", ad.Assessment.Name,
 		"organization_count", len(ad.Organizations),
 		"tool_count", len(ad.ToolsMap),
 	)
 
-	if ad.Metadata != nil {
-		ad.Metadata.LoadData = NewVatOpMetadata(ctx)
-	} else {
-		ad.Metadata = &VatMetadata{
-			LoadData: NewVatOpMetadata(ctx),
-		}
-	}
-
-	if ad.Metadata.LoadData.VectrVersion != TAGGED_VECTR_VERSION {
-		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", ad.Metadata.LoadData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION)
-	}
-
-	if ad.Metadata.SaveData != nil && ad.Metadata.SaveData.VectrVersion != ad.Metadata.LoadData.VectrVersion {
-		slog.WarnContext(ctx, "Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Metadata.SaveData.VectrVersion, "live-vectr-version", ad.Metadata.LoadData.VectrVersion)
-	}
-
+	// Step 1: Check if the organizations are in the new instance, error if not
 	missing_orgs := []string{}
 	org_map := make(map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization)
 	for _, o := range ad.Organizations {
@@ -228,10 +214,10 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			}
 			if ad.OptionalFields.OrgMap != nil {
 				om := ad.OptionalFields.OrgMap[o]
-				return fmt.Errorf("could not fetch organization: %s, %s, %s, %s: %w", om.Name, om.Abbreviation, om.Description, om.Url, err)
+				return nil, nil, fmt.Errorf("could not fetch organization: %s, %s, %s, %s: %w", om.Name, om.Abbreviation, om.Description, om.Url, err)
 
 			} else {
-				return fmt.Errorf("could not fetch organization: %s: %w", o, err)
+				return nil, nil, fmt.Errorf("could not fetch organization: %s: %w", o, err)
 			}
 		}
 		if len(r.Organizations.Nodes) == 0 {
@@ -251,21 +237,19 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				slog.ErrorContext(ctx, "missing organization", "name", om.Name, "abbreviation", om.Abbreviation, "desc", om.Description, "url", om.Url)
 			}
 		}
-		return fmt.Errorf("these orgs are missing from your instance: %s: %w", strings.Join(missing_orgs, ","), ErrOrgNotFound)
+		return nil, nil, fmt.Errorf("these orgs are missing from your instance: %s: %w", strings.Join(missing_orgs, ","), ErrOrgNotFound)
 	}
 
 	// Step 2: Check if all the tools are there, alert with each tool, product info
-
 	instance_tools, err := dao.GetAllDefenseTools(ctx, client, db)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
 			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 		}
-		return fmt.Errorf("could not fetch tools: %w", err)
+		return nil, nil, fmt.Errorf("could not fetch tools: %w", err)
 	}
 
 	tool_map := make(map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(ad.ToolsMap))
-
 	missing_tools := []GenericBlueTool{}
 	slog.DebugContext(ctx, "Validating tools",
 		"total", len(ad.ToolsMap))
@@ -290,8 +274,34 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				"product (optional)", missing_tool.ProductName,
 			)
 		}
-		return ErrMissingTools
+		return nil, nil, ErrMissingTools
+	}
 
+	return org_map, tool_map, nil
+}
+
+func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, optionalParams *RestoreOptionalParams) error {
+	slog.InfoContext(ctx, "Starting RestoreAssessment", "db", db, "assessment_name", ad.Assessment.Name)
+
+	if ad.Metadata != nil {
+		ad.Metadata.LoadData = NewVatOpMetadata(ctx)
+	} else {
+		ad.Metadata = &VatMetadata{
+			LoadData: NewVatOpMetadata(ctx),
+		}
+	}
+
+	if ad.Metadata.LoadData.VectrVersion != TAGGED_VECTR_VERSION {
+		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", ad.Metadata.LoadData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION)
+	}
+
+	if ad.Metadata.SaveData != nil && ad.Metadata.SaveData.VectrVersion != ad.Metadata.LoadData.VectrVersion {
+		slog.WarnContext(ctx, "Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Metadata.SaveData.VectrVersion, "live-vectr-version", ad.Metadata.LoadData.VectrVersion)
+	}
+
+	org_map, tool_map, err := validateRestorePrerequisites(ctx, client, db, ad)
+	if err != nil {
+		return err
 	}
 
 	if optionalParams.AssessmentName != "" {
