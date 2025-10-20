@@ -26,6 +26,7 @@ var ErrMissingTools = fmt.Errorf("could not find tools")
 var ErrMissingLibraryAssessment = fmt.Errorf("missing library assessment")
 var ErrInvalidAssessmentName = fmt.Errorf("assessment name override is invalid (blank?)")
 var ErrAssessmentAlreadyExists = fmt.Errorf("assessment already exists")
+var ErrCampaignNotFound = fmt.Errorf("campaign not found")
 
 // executorMap maps automation executor types (e.g., "powershell") to their corresponding internal representation.
 // The read part of the API does not return an ENUM or fixed type, just a generic string. This maps it back
@@ -669,6 +670,39 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	slog.InfoContext(ctx, "Assessment restored successfully", "assessment-name", ad.Assessment.Name)
 	return nil
 
+}
+
+func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, sourceCampaignName, targetAssessmentName string) error {
+	slog.InfoContext(ctx, "Starting RestoreCampaign", "db", db, "source_campaign", sourceCampaignName, "target_assessment", targetAssessmentName)
+
+	org_map, tool_map, err := validateRestorePrerequisites(ctx, client, db, ad)
+	if err != nil {
+		return err
+	}
+
+	var campaignToRestore dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaignConnectionNodesCampaign
+	found := false
+	for _, c := range ad.Assessment.Campaigns {
+		if c.Name == sourceCampaignName {
+			campaignToRestore = c
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("in assessment data for '%s': %w: %s", ad.Assessment.Name, ErrCampaignNotFound, sourceCampaignName)
+	}
+
+	targetAssessment, err := dao.FindExistingAssessment(ctx, client, db, targetAssessmentName)
+	if err != nil {
+		return fmt.Errorf("could not look up target assessment '%s': %w", targetAssessmentName, err)
+	}
+	if len(targetAssessment.Assessments.Nodes) == 0 {
+		return fmt.Errorf("target assessment '%s' not found in database '%s'", targetAssessmentName, db)
+	}
+	targetAssessmentId := targetAssessment.Assessments.Nodes[0].Id
+
+	return restoreCampaigns(ctx, client, db, targetAssessmentId, targetAssessmentName, []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaignConnectionNodesCampaign{campaignToRestore}, org_map, tool_map, ad.IdToolsMap)
 }
 
 func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair, vatMetadata *VatMetadata) []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair {
