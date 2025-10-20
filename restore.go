@@ -197,7 +197,7 @@ func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.Cr
 // exist in the target VECTR instance.
 // It returns a map of organization names to their VECTR objects, a map of tool names to their VECTR objects,
 // and an error if any prerequisite is not met.
-func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db string, orgNames []string, toolsToValidate map[string]GenericBlueTool, optionalOrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganization) (map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, error) {
+func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db string, orgNames []string, toolsToValidate map[string]GenericBlueTool, optionalOrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization) (map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, error) {
 	slog.InfoContext(ctx, "Starting restore prerequisites validation",
 		"db", db,
 		"organization_count", len(orgNames),
@@ -714,7 +714,7 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 	}
 
 	// Create a temporary optionalOrgMap for the specific campaign's organizations
-	campaignOptionalOrgMap := make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganization)
+	campaignOptionalOrgMap := make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization)
 	if ad.OptionalFields.OrgMap != nil {
 		for _, orgName := range campaignOrgNames {
 			if orgDetail, ok := ad.OptionalFields.OrgMap[orgName]; ok {
