@@ -21,6 +21,7 @@ var (
 	targetHostname        string
 	targetCredentialsFile string
 	targetDB              string
+	sourceCampaignName    string // New flag for specific campaign transfer
 )
 
 // Create a transfer subcommand
@@ -100,15 +101,28 @@ var transferCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		optionalParams := &vat.RestoreOptionalParams{
-			AssessmentName:             targetAssessmentName,
-			OverrideAssessmentTemplate: overrideAssessmentTemplate,
-		}
-		// Transfer the assessment data to the target instance
-		slog.InfoContext(targetVersionContext, "Transferring assessment data to target instance", "hostname", targetHostname, "db", targetDB)
-		if err := vat.RestoreAssessment(targetVersionContext, targetClient, targetDB, assessmentData, optionalParams); err != nil {
-			slog.ErrorContext(targetVersionContext, "Failed to transfer assessment data to target instance", "error", err)
-			os.Exit(1)
+		if sourceCampaignName == "" {
+			optionalParams := &vat.RestoreOptionalParams{
+				AssessmentName:             targetAssessmentName,
+				OverrideAssessmentTemplate: overrideAssessmentTemplate,
+			}
+			// Original full assessment transfer logic
+			slog.InfoContext(targetVersionContext, "Transferring assessment data to target instance", "hostname", targetHostname, "db", targetDB)
+			if err := vat.RestoreAssessment(targetVersionContext, targetClient, targetDB, assessmentData, optionalParams); err != nil {
+				slog.ErrorContext(targetVersionContext, "Failed to transfer assessment data to target instance", "error", err)
+				os.Exit(1)
+			}
+		} else {
+			// New campaign-only transfer logic
+			if targetAssessmentName == "" {
+				slog.ErrorContext(ctx, "--target-assessment-name is required when using --source-campaign-name")
+				os.Exit(1)
+			}
+			slog.InfoContext(targetVersionContext, "Transferring campaign to target assessment", "source-campaign", sourceCampaignName, "target-assessment", targetAssessmentName)
+			if err := vat.RestoreCampaign(targetVersionContext, targetClient, targetDB, assessmentData, sourceCampaignName, targetAssessmentName); err != nil {
+				slog.ErrorContext(targetVersionContext, "Failed to transfer campaign to target instance", "error", err)
+				os.Exit(1)
+			}
 		}
 
 		slog.InfoContext(ctx, "Assessment transferred successfully")
@@ -128,6 +142,7 @@ func init() {
 	transferCmd.Flags().StringVar(&assessmentName, "assessment-name", "", "Name of the assessment to transfer (required)")
 	transferCmd.Flags().StringVar(&targetAssessmentName, "target-assessment-name", "", "The assessment name to set in the new instance")
 	transferCmd.Flags().BoolVar(&overrideAssessmentTemplate, "override-template-assessment", false, "Ignore the template name in the serialized data and load template test cases anyway")
+	transferCmd.Flags().StringVar(&sourceCampaignName, "source-campaign-name", "", "Name of a specific campaign to transfer. If set, --target-assessment-name must be an existing assessment.")
 
 	// Mark flags as required
 	transferCmd.MarkFlagRequired("source-hostname")
