@@ -680,7 +680,7 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 		return err
 	}
 
-	var campaignToRestore dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaignConnectionNodesCampaign
+	var campaignToRestore dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign
 	found := false
 	for _, c := range ad.Assessment.Campaigns {
 		if c.Name == sourceCampaignName {
@@ -702,7 +702,7 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 	}
 	targetAssessmentId := targetAssessment.Assessments.Nodes[0].Id
 
-	return restoreCampaigns(ctx, client, db, targetAssessmentId, targetAssessmentName, []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaignConnectionNodesCampaign{campaignToRestore}, org_map, tool_map, ad.IdToolsMap)
+	return restoreCampaigns(ctx, client, db, targetAssessmentId, targetAssessmentName, []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign{campaignToRestore}, org_map, tool_map, ad.IdToolsMap)
 }
 
 func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair, vatMetadata *VatMetadata) []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair {
