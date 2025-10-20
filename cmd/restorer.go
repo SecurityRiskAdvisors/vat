@@ -19,9 +19,8 @@ import (
 )
 
 var (
-	inputFile          string
-	passphraseFile     string
-	sourceCampaignName string
+	inputFile      string
+	passphraseFile string
 )
 
 // Create a restore subcommand

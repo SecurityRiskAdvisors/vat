@@ -21,7 +21,6 @@ var (
 	targetHostname        string
 	targetCredentialsFile string
 	targetDB              string
-	sourceCampaignName    string // New flag for specific campaign transfer
 )
 
 // Create a transfer subcommand

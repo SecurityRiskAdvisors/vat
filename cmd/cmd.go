@@ -19,6 +19,7 @@ var (
 	clientKeyFile              string
 	caCertFiles                []string
 	tlsParams                  *util.CustomTlsParams
+	sourceCampaignName         string
 )
 
 // RootCmd is the root command for the CLI
