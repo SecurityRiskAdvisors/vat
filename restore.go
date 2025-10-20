@@ -280,6 +280,199 @@ func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db
 	return org_map, tool_map, nil
 }
 
+// restoreCampaigns moves the campaign and test case creation logic into its own function.
+// It creates campaigns for a given assessment and then creates the test cases within those campaigns.
+func restoreCampaigns(ctx context.Context, client graphql.Client, db string, assessmentId string, assessmentName string, campaignsToRestore []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaignConnectionNodesCampaign, orgMap map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, toolMap map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, idToolsMap map[string]GenericBlueTool) error {
+	// Step 5: Create the campaigns
+	campaigns := dao.CreateCampaignInput{
+		Db:           db,
+		AssessmentId: assessmentId,
+		CampaignData: []dao.CreateCampaignDataInput{},
+	}
+	for _, c := range campaignsToRestore {
+		campaign := dao.CreateCampaignDataInput{
+			Name:        c.Name,
+			Description: c.Description,
+		}
+		for _, o := range c.Organizations {
+			campaign.OrganizationIds = append(campaign.OrganizationIds, orgMap[o.Name].Id)
+		}
+		for _, md := range c.Metadata {
+			campaign.Metadata = append(campaign.Metadata, dao.MetadataKeyValuePairInput(md))
+		}
+		campaigns.CampaignData = append(campaigns.CampaignData, campaign)
+	}
+	slog.DebugContext(ctx, "Creating campaigns",
+		"count", len(campaigns.CampaignData),
+		"assessment_name", assessmentName)
+	r, err := dao.CreateCampaigns(ctx, client, campaigns)
+	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return fmt.Errorf("could not create campaigns for %s, suggest deleting the assessment: %w", assessmentName, err)
+	}
+	// Note that this creates a bug where if two campaigns are the same name, it will not work.
+	// To be fixed if you'll need to insert each campaign individually so you can map them
+	// For now this is fine
+	campaign_map := make(map[string]string)
+	for _, cdata := range r.Campaign.Create.Campaigns {
+		campaign_map[cdata.Name] = cdata.Id
+	}
+
+	slog.InfoContext(ctx, "Campaigns created",
+		"count", len(campaigns.CampaignData),
+		"assessment_name", assessmentName)
+
+	// Step 6: Create the test cases but need to do a calculation if the highest outcome from the tool doesn't match the test case, set override
+	testCaseCount := 0
+	for _, c := range campaignsToRestore {
+		// there could be a mix of test case types in a campaign, so add both types in
+		tc_with_library := NewGroupedCreateTestCaseWithLibraryIdInput(dao.CreateTestCaseMatchByLibraryIdInput{
+			Db:                   db,
+			CampaignId:           campaign_map[c.Name],
+			CreateTestCaseInputs: []dao.CreateTestCaseDataWithLibraryIdInput{},
+		})
+
+		tc_no_template := dao.CreateTestCaseWithoutTemplateInput{
+			Db:           db,
+			CampaignId:   campaign_map[c.Name],
+			TestCaseData: []dao.CreateTestCaseDataInput{},
+		}
+
+		// have to do this here (maybe make this an object in the future)
+		// but basically, I need to check if the outcome is in the map
+		// if it is not, throw an error
+		for _, serialized_tc := range c.TestCases {
+			if _, ok := outcomeStatusMap[serialized_tc.Status]; !ok {
+				slog.ErrorContext(ctx, "could not find outcome for this test case", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name)
+				return fmt.Errorf("outcome %s not found", serialized_tc.Status)
+			}
+			testCaseData := dao.CreateTestCaseDataInput{
+				Name:             serialized_tc.Name,
+				Description:      serialized_tc.Description,
+				Phase:            serialized_tc.Phase.Name,
+				Technique:        serialized_tc.MitreId,
+				Organization:     serialized_tc.Organizations[0].Name,
+				Status:           outcomeStatusMap[serialized_tc.Status],
+				DetectionSteps:   serialized_tc.DetectionGuidance,
+				PreventionSteps:  serialized_tc.PreventionGuidance,
+				OutcomePath:      serialized_tc.Outcome.Path,
+				OutcomeNotes:     serialized_tc.OutcomeNotes,
+				DetectionTime:    serialized_tc.DetectionTime.CreateTime,
+				References:       serialized_tc.References,
+				OperatorGuidance: serialized_tc.OperatorGuidance,
+				AttackStart:      serialized_tc.AttackStart.CreateTime,
+				AttackStop:       serialized_tc.AttackStop.CreateTime,
+				DataVer:          serialized_tc.DataVer,
+				OverrideOutcome:  serialized_tc.OverrideOutcome,
+				//Tags:                  []string{}, //to be handled below
+				//Targets:               []string{}, // to be handled below
+				//Sources:               []string{},
+				//Defenses:              []string{},
+				//DetectingDefenseTools: []DefenseToolInput{},          // handle below
+				//RedTeamMetadata:       []MetadataKeyValuePairInput{}, //handle below
+				//BlueTeamMetadata:      []MetadataKeyValuePairInput{}, // handle below
+				//AttackAutomation:      AttackAutomationInput{},       //handle below
+				//RedTools:              []RedToolInput{},
+				//DefenseToolOutcomes:   []DefenseToolOutcomeInput{},   // handle below
+			}
+			for _, tag := range serialized_tc.Tags {
+				testCaseData.Tags = append(testCaseData.Tags, tag.Name)
+			}
+			for _, target := range serialized_tc.Targets {
+				testCaseData.Targets = append(testCaseData.Targets, target.Name)
+			}
+			for _, source := range serialized_tc.Sources {
+				testCaseData.Sources = append(testCaseData.Sources, source.Name)
+			}
+			for _, defense := range serialized_tc.DefensiveLayers {
+				testCaseData.Defenses = append(testCaseData.Defenses, defense.Name)
+			}
+			for _, detectingdefensetool := range serialized_tc.BlueTools {
+				testCaseData.DetectingDefenseTools = append(testCaseData.DetectingDefenseTools, dao.DefenseToolInput{
+					Name: detectingdefensetool.Name,
+				})
+			}
+			for _, md := range serialized_tc.Metadata {
+				testCaseData.RedTeamMetadata = append(testCaseData.RedTeamMetadata, dao.MetadataKeyValuePairInput(md))
+			}
+			if serialized_tc.AutomationCmd != "" {
+				testCaseData.AttackAutomation = &dao.AttackAutomationInput{
+					Command:         serialized_tc.AutomationCmd,
+					Executor:        executorMap[serialized_tc.AutomationExecutor],
+					CleanupCommand:  serialized_tc.AutomationCleanup,
+					CleanupExecutor: executorMap[serialized_tc.AutomationCleanupExecutor],
+				}
+				for _, autoArg := range serialized_tc.AutomationArgument {
+					testCaseData.AttackAutomation.AttackVariables = append(testCaseData.AttackAutomation.AttackVariables, dao.AttackAutomationVariable{
+						InputName:  autoArg.ArgumentKey,
+						InputValue: autoArg.ArgumentValue,
+						Type:       dao.AutomationVarType(strings.ToUpper(autoArg.ArgumentType)),
+					})
+				}
+			}
+			for _, redtool := range serialized_tc.RedTools {
+				testCaseData.RedTools = append(testCaseData.RedTools, dao.RedToolInput{
+					Name: redtool.Name,
+				})
+			}
+
+			for _, result := range serialized_tc.DefenseToolOutcomes {
+				testCaseData.DefenseToolOutcomes = append(testCaseData.DefenseToolOutcomes, dao.DefenseToolOutcomeInput{
+					// take the stringifed integer from the serialized data, look up the tool name from the original data set
+					//		and then look up the id in the new instance
+					DefenseToolId: toolMap[idToolsMap[strconv.Itoa(result.DefenseToolId)].Name].Id,
+					OutcomeId:     result.OutcomeId,
+				})
+			}
+			// if there is no library test case id, then add with no template
+			if serialized_tc.LibraryTestCaseId == "" || serialized_tc.LibraryTestCaseId == "null" {
+				tc_no_template.TestCaseData = append(tc_no_template.TestCaseData, testCaseData)
+			} else {
+				// otherwise, create with template
+				tcd := dao.CreateTestCaseDataWithLibraryIdInput{
+					LibraryTestCaseId:    serialized_tc.LibraryTestCaseId,
+					CreateNewIfNotExists: false,
+					TestCaseData:         testCaseData,
+				}
+				tc_with_library.Add(tcd)
+			}
+		}
+		slog.DebugContext(ctx, "Creating test cases",
+			"campaign_name", c.Name,
+			"test_case_count", tc_with_library.Len(),
+			"test-case-count-no-template", len(tc_no_template.TestCaseData),
+			"assessment_name", assessmentName)
+		if tc_with_library.Len() > 0 {
+			inserts := tc_with_library.GenerateInsertsData()
+			for _, insertdata := range inserts {
+				_, err := dao.CreateTestCasesByLibraryId(ctx, client, insertdata)
+				if err != nil {
+					if gqlObject, ok := gqlErrParse(err); ok {
+						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+					}
+					return fmt.Errorf("could not write test cases for %s, campaign: %s; check vectr version: %w", assessmentName, c.Name, err)
+				}
+				testCaseCount += len(insertdata.CreateTestCaseInputs)
+			}
+		}
+		if len(tc_no_template.TestCaseData) > 0 {
+			_, err := dao.CreateTestCasesNoTemplate(ctx, client, tc_no_template)
+			if err != nil {
+				if gqlObject, ok := gqlErrParse(err); ok {
+					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+				}
+				return fmt.Errorf("could not write test cases for %s: %w", assessmentName, err)
+			}
+			testCaseCount += len(tc_no_template.TestCaseData)
+		}
+	}
+	slog.InfoContext(ctx, "Test cases created", "assessment-name", assessmentName, "test-case-count", testCaseCount)
+
+	return nil
+}
+
 func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, optionalParams *RestoreOptionalParams) error {
 	slog.InfoContext(ctx, "Starting RestoreAssessment", "db", db, "assessment_name", ad.Assessment.Name)
 
@@ -467,193 +660,12 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	}
 	//a.Assessment.Create.Assessments[0].Id
 
-	// Step 5: Create the campaigns
-	campaigns := dao.CreateCampaignInput{
-		Db:           db,
-		AssessmentId: a.Assessment.Create.Assessments[0].Id,
-		CampaignData: []dao.CreateCampaignDataInput{},
-	}
-	for _, c := range ad.Assessment.Campaigns {
-		campaign := dao.CreateCampaignDataInput{
-			Name:        c.Name,
-			Description: c.Description,
-		}
-		for _, o := range c.Organizations {
-			campaign.OrganizationIds = append(campaign.OrganizationIds, org_map[o.Name].Id)
-		}
-		for _, md := range c.Metadata {
-			campaign.Metadata = append(campaign.Metadata, dao.MetadataKeyValuePairInput(md))
-		}
-		campaigns.CampaignData = append(campaigns.CampaignData, campaign)
-	}
-	slog.DebugContext(ctx, "Creating campaigns",
-		"count", len(campaigns.CampaignData),
-		"assessment_name", ad.Assessment.Name)
-	r, err := dao.CreateCampaigns(ctx, client, campaigns)
+	err = restoreCampaigns(ctx, client, db, a.Assessment.Create.Assessments[0].Id, ad.Assessment.Name, ad.Assessment.Campaigns, org_map, tool_map, ad.IdToolsMap)
 	if err != nil {
-		if gqlObject, ok := gqlErrParse(err); ok {
-			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
-		}
-		return fmt.Errorf("could not create campaigns for %s, suggest deleting the assessment: %w", a.Assessment.Create.Assessments[0].Name, err)
-	}
-	// Note that this creates a bug where if two campaigns are the same name, it will not work.
-	// To be fixed if you'll need to insert each campaign individually so you can map them
-	// For now this is fine
-	campaign_map := make(map[string]string)
-	for _, cdata := range r.Campaign.Create.Campaigns {
-		campaign_map[cdata.Name] = cdata.Id
+		return fmt.Errorf("could not create campaigns and test cases for assessment %s: %w", ad.Assessment.Name, err)
 	}
 
-	slog.InfoContext(ctx, "Campaigns created",
-		"count", len(campaigns.CampaignData),
-		"assessment_name", ad.Assessment.Name)
-
-	// Step 6: Create the test cases but need to do a calculation if the highest outcome from the tool doesn't match the test case, set override
-	testCaseCount := 0
-	for _, c := range ad.Assessment.Campaigns {
-		// there could be a mix of test case types in a campaign, so add both types in
-		tc_with_library := NewGroupedCreateTestCaseWithLibraryIdInput(dao.CreateTestCaseMatchByLibraryIdInput{
-			Db:                   db,
-			CampaignId:           campaign_map[c.Name],
-			CreateTestCaseInputs: []dao.CreateTestCaseDataWithLibraryIdInput{},
-		})
-
-		tc_no_template := dao.CreateTestCaseWithoutTemplateInput{
-			Db:           db,
-			CampaignId:   campaign_map[c.Name],
-			TestCaseData: []dao.CreateTestCaseDataInput{},
-		}
-
-		// have to do this here (maybe make this an object in the future)
-		// but basically, I need to check if the outcome is in the map
-		// if it is not, throw an error
-		for _, serialized_tc := range c.TestCases {
-			if _, ok := outcomeStatusMap[serialized_tc.Status]; !ok {
-				slog.ErrorContext(ctx, "could not find outcome for this test case", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name)
-				return fmt.Errorf("outcome %s not found", serialized_tc.Status)
-			}
-			testCaseData := dao.CreateTestCaseDataInput{
-				Name:             serialized_tc.Name,
-				Description:      serialized_tc.Description,
-				Phase:            serialized_tc.Phase.Name,
-				Technique:        serialized_tc.MitreId,
-				Organization:     serialized_tc.Organizations[0].Name,
-				Status:           outcomeStatusMap[serialized_tc.Status],
-				DetectionSteps:   serialized_tc.DetectionGuidance,
-				PreventionSteps:  serialized_tc.PreventionGuidance,
-				OutcomePath:      serialized_tc.Outcome.Path,
-				OutcomeNotes:     serialized_tc.OutcomeNotes,
-				DetectionTime:    serialized_tc.DetectionTime.CreateTime,
-				References:       serialized_tc.References,
-				OperatorGuidance: serialized_tc.OperatorGuidance,
-				AttackStart:      serialized_tc.AttackStart.CreateTime,
-				AttackStop:       serialized_tc.AttackStop.CreateTime,
-				DataVer:          serialized_tc.DataVer,
-				OverrideOutcome:  serialized_tc.OverrideOutcome,
-				//Tags:                  []string{}, //to be handled below
-				//Targets:               []string{}, // to be handled below
-				//Sources:               []string{},
-				//Defenses:              []string{},
-				//DetectingDefenseTools: []DefenseToolInput{},          // handle below
-				//RedTeamMetadata:       []MetadataKeyValuePairInput{}, //handle below
-				//BlueTeamMetadata:      []MetadataKeyValuePairInput{}, // handle below
-				//AttackAutomation:      AttackAutomationInput{},       //handle below
-				//RedTools:              []RedToolInput{},
-				//DefenseToolOutcomes:   []DefenseToolOutcomeInput{},   // handle below
-			}
-			for _, tag := range serialized_tc.Tags {
-				testCaseData.Tags = append(testCaseData.Tags, tag.Name)
-			}
-			for _, target := range serialized_tc.Targets {
-				testCaseData.Targets = append(testCaseData.Targets, target.Name)
-			}
-			for _, source := range serialized_tc.Sources {
-				testCaseData.Sources = append(testCaseData.Sources, source.Name)
-			}
-			for _, defense := range serialized_tc.DefensiveLayers {
-				testCaseData.Defenses = append(testCaseData.Defenses, defense.Name)
-			}
-			for _, detectingdefensetool := range serialized_tc.BlueTools {
-				testCaseData.DetectingDefenseTools = append(testCaseData.DetectingDefenseTools, dao.DefenseToolInput{
-					Name: detectingdefensetool.Name,
-				})
-			}
-			for _, md := range serialized_tc.Metadata {
-				testCaseData.RedTeamMetadata = append(testCaseData.RedTeamMetadata, dao.MetadataKeyValuePairInput(md))
-			}
-			if serialized_tc.AutomationCmd != "" {
-				testCaseData.AttackAutomation = &dao.AttackAutomationInput{
-					Command:         serialized_tc.AutomationCmd,
-					Executor:        executorMap[serialized_tc.AutomationExecutor],
-					CleanupCommand:  serialized_tc.AutomationCleanup,
-					CleanupExecutor: executorMap[serialized_tc.AutomationCleanupExecutor],
-				}
-				for _, autoArg := range serialized_tc.AutomationArgument {
-					testCaseData.AttackAutomation.AttackVariables = append(testCaseData.AttackAutomation.AttackVariables, dao.AttackAutomationVariable{
-						InputName:  autoArg.ArgumentKey,
-						InputValue: autoArg.ArgumentValue,
-						Type:       dao.AutomationVarType(strings.ToUpper(autoArg.ArgumentType)),
-					})
-				}
-			}
-			for _, redtool := range serialized_tc.RedTools {
-				testCaseData.RedTools = append(testCaseData.RedTools, dao.RedToolInput{
-					Name: redtool.Name,
-				})
-			}
-
-			for _, result := range serialized_tc.DefenseToolOutcomes {
-				testCaseData.DefenseToolOutcomes = append(testCaseData.DefenseToolOutcomes, dao.DefenseToolOutcomeInput{
-					// take the stringifed integer from the serialized data, look up the tool name from the original data set
-					//		and then look up the id in the new instance
-					DefenseToolId: tool_map[ad.IdToolsMap[strconv.Itoa(result.DefenseToolId)].Name].Id,
-					OutcomeId:     result.OutcomeId,
-				})
-			}
-			// if there is no library test case id, then add with no template
-			if serialized_tc.LibraryTestCaseId == "" || serialized_tc.LibraryTestCaseId == "null" {
-				tc_no_template.TestCaseData = append(tc_no_template.TestCaseData, testCaseData)
-			} else {
-				// otherwise, create with template
-				tcd := dao.CreateTestCaseDataWithLibraryIdInput{
-					LibraryTestCaseId:    serialized_tc.LibraryTestCaseId,
-					CreateNewIfNotExists: false,
-					TestCaseData:         testCaseData,
-				}
-				tc_with_library.Add(tcd)
-			}
-		}
-		slog.DebugContext(ctx, "Creating test cases",
-			"campaign_name", c.Name,
-			"test_case_count", tc_with_library.Len(),
-			"test-case-count-no-template", len(tc_no_template.TestCaseData),
-			"assessment_name", ad.Assessment.Name)
-		if tc_with_library.Len() > 0 {
-			inserts := tc_with_library.GenerateInsertsData()
-			for _, insertdata := range inserts {
-				_, err := dao.CreateTestCasesByLibraryId(ctx, client, insertdata)
-				if err != nil {
-					if gqlObject, ok := gqlErrParse(err); ok {
-						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
-					}
-					return fmt.Errorf("could not write test cases for %s, campaign: %s; check vectr version: %w", ad.Assessment.Name, c.Name, err)
-				}
-				testCaseCount += len(insertdata.CreateTestCaseInputs)
-			}
-		}
-		if len(tc_no_template.TestCaseData) > 0 {
-			_, err := dao.CreateTestCasesNoTemplate(ctx, client, tc_no_template)
-			if err != nil {
-				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
-				}
-				return fmt.Errorf("could not write test cases for %s: %w", ad.Assessment.Name, err)
-			}
-			testCaseCount += len(tc_no_template.TestCaseData)
-		}
-	}
-	slog.InfoContext(ctx, "Test cases created", "assessment-name", ad.Assessment.Name, "test-case-count", testCaseCount)
-
+	slog.InfoContext(ctx, "Assessment restored successfully", "assessment-name", ad.Assessment.Name)
 	return nil
 
 }
