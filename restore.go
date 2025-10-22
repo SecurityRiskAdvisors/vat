@@ -474,6 +474,72 @@ func restoreCampaigns(ctx context.Context, client graphql.Client, db string, ass
 	return nil
 }
 
+// validateLibraryTestCases checks if a list of library test case IDs exist in the target VECTR instance.
+// It performs a query and specifically handles the GraphQL error case where some IDs are not found,
+// returning a detailed error message.
+func validateLibraryTestCases(ctx context.Context, client graphql.Client, libraryTestCaseIDs []string, templateAssessmentName string) error {
+	if len(libraryTestCaseIDs) == 0 {
+		return nil
+	}
+	// first time, we never really need to check the response, if the missing ids remain none,
+	// we don't need to do anything
+	_, err := dao.GetLibraryTestCases(ctx, client, libraryTestCaseIDs)
+	if err == nil {
+		return nil
+	}
+
+	var missing_ids []string
+	gqlerrlist, ok := err.(gqlerror.List)
+	if !ok {
+		return fmt.Errorf("could not fetch library test cases for %s: %w", templateAssessmentName, err)
+	}
+
+	// the error type we expect only has one entry for this path
+	if !(len(gqlerrlist) == 1 && gqlerrlist[0].Path.String() == "libraryTestcasesByIds") {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return fmt.Errorf("could not fetch library test cases for %s: %w", templateAssessmentName, err)
+	}
+	// there should be an `ids` field in the extensions object
+	rawids, ok := gqlerrlist[0].Extensions["ids"]
+	if !ok {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return fmt.Errorf("could not fetch library test cases for %s: %w", templateAssessmentName, err)
+	}
+	// the `ids` filed should only have one entry
+	ids, ok := rawids.([]any)
+	if !(ok && len(ids) == 1) {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return fmt.Errorf("could not fetch library test cases for %s: %w", templateAssessmentName, err)
+	}
+
+	id := ids[0].(string)
+	if !strings.HasPrefix(id, "The following IDs were not valid") {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return fmt.Errorf("could not fetch library test cases for %s: %w", templateAssessmentName, err)
+	}
+	// this is a case where we got an error back for an otherwise valid query, one or more of the ids are not valid
+	mids, err := ParseLibraryTestcasesByIdsError(id)
+	if err != nil {
+		return fmt.Errorf("could not fetch library test cases for %s: %w", templateAssessmentName, err)
+	}
+	missing_ids = append(missing_ids, mids...)
+
+	if len(missing_ids) > 0 {
+		slog.ErrorContext(ctx, "could not find all the ids in the instance", "missing-ids", missing_ids)
+		return fmt.Errorf("could not find all the ids in the instance, override templates to insert, missing id count: %d", len(missing_ids))
+	}
+
+	return nil
+}
+
 func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, optionalParams *RestoreOptionalParams) error {
 	slog.InfoContext(ctx, "Starting RestoreAssessment", "db", db, "assessment_name", ad.Assessment.Name)
 
@@ -569,61 +635,8 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		}
 		// now let's check the actual data
 		ids := slices.Collect(maps.Keys(ad.LibraryTestCases))
-		if len(ids) > 0 {
-			missing_ids := []string{}
-			// first time, we never really need to check the response, if the missing ids remain none,
-			// we don't need to do anything
-			_, err := dao.GetLibraryTestCases(ctx, client, ids)
-			if err != nil {
-				gqlerrlist, ok := err.(gqlerror.List)
-				if !ok {
-					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
-				}
-
-				// the error type we expect only has one entry for this path
-				if !(len(gqlerrlist) == 1 && gqlerrlist[0].Path.String() == "libraryTestcasesByIds") {
-					if gqlObject, ok := gqlErrParse(err); ok {
-						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
-					}
-					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
-				}
-				// there should be an `ids` field in the extensions object
-				rawids, ok := gqlerrlist[0].Extensions["ids"]
-				if !ok {
-					if gqlObject, ok := gqlErrParse(err); ok {
-						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
-					}
-					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
-				}
-				// the `ids` filed should only have one entry
-				ids, ok := rawids.([]any)
-				if !(ok && len(ids) == 1) {
-					if gqlObject, ok := gqlErrParse(err); ok {
-						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
-					}
-					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
-				}
-
-				id := ids[0].(string)
-				if !strings.HasPrefix(id, "The following IDs were not valid") {
-					if gqlObject, ok := gqlErrParse(err); ok {
-						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
-					}
-					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
-				}
-				// this is a case where we got an error back for an otherwise valid query, one or more of the ids are not valid
-				mids, err := ParseLibraryTestcasesByIdsError(id)
-				if err != nil {
-					return fmt.Errorf("could not fetch library test cases for %s: %w", ad.TemplateAssessment, err)
-				}
-				missing_ids = append(missing_ids, mids...)
-			}
-			if len(missing_ids) > 0 {
-				slog.ErrorContext(ctx, "could not find all the ids in the instance", "missing-ids", missing_ids)
-				return fmt.Errorf("could not find all the ids in the instance, override templates to insert, missing id count: %d", len(missing_ids))
-
-			}
-
+		if err := validateLibraryTestCases(ctx, client, ids, ad.TemplateAssessment); err != nil {
+			return err
 		}
 
 	}
@@ -695,6 +708,18 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 		return fmt.Errorf("target assessment '%s' not found in database '%s'", targetAssessmentName, db)
 	}
 	targetAssessmentId := targetAssessment.Assessments.Nodes[0].Id
+
+	// Collect and validate library test case IDs for the specific campaign
+	libraryTestCaseIDs := []string{}
+	for _, tc := range campaignToRestore.TestCases {
+		if tc.LibraryTestCaseId != "" && tc.LibraryTestCaseId != "null" {
+			libraryTestCaseIDs = append(libraryTestCaseIDs, tc.LibraryTestCaseId)
+		}
+	}
+
+	if err := validateLibraryTestCases(ctx, client, libraryTestCaseIDs, ad.TemplateAssessment); err != nil {
+		return err
+	}
 
 	// Collect organizations for the specific campaign
 	campaignOrgNames := make([]string, 0, len(campaignToRestore.Organizations))
