@@ -198,7 +198,7 @@ Enable debug mode for detailed logs:
 To extract the JSON data from an encrypted assessment file in one command:
 
 ```bash
-cat encrypted_file | age --decrypt --passphrase | gunzip > assessment.json
+cat encrypted_file | age --decrypt | gunzip > assessment.json
 ```
 
 This command will prompt for the passphrase and then extract the decrypted JSON data.
@@ -210,7 +210,7 @@ This command will prompt for the passphrase and then extract the decrypted JSON 
 To repackage a modified JSON file back into an encrypted archive:
 
 ```bash
-cat modified_assessment.json | gzip | age --encrypt --passphrase > archive.age
+cat modified_assessment.json | gzip | age --encrypt --passphrase > archive.vat
 ```
 
 This command will prompt for a passphrase and create an encrypted file that can be used with the restore command.
