@@ -1,13 +1,13 @@
 module sra/vat
 
-go 1.25
+go 1.25.5
 
 require (
 	filippo.io/age v1.2.1
 	github.com/Khan/genqlient v0.8.1
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.8.1
-	github.com/vektah/gqlparser/v2 v2.5.30
+	github.com/vektah/gqlparser/v2 v2.5.31
 	pgregory.net/rapid v1.2.0
 )
 
