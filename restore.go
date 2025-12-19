@@ -54,6 +54,29 @@ var outcomeStatusMap map[string]dao.TestCaseStatus = map[string]dao.TestCaseStat
 	"Not Performed":                        dao.TestCaseStatusNotperformed,
 }
 
+type AutomationArgumentTypes interface {
+	dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaignTestCasesTestCaseAutomationArgument | dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCaseAutomationArgument
+}
+
+type pointerAutomationArgs[A any] interface {
+	*A
+	AutomationArgumentFetcher
+}
+
+type AutomationArgumentFetcher interface {
+	GetArgumentKey() string
+	GetArgumentValue() string
+	GetArgumentType() string
+}
+
+type Automator[A AutomationArgumentTypes] interface {
+	GetAutomationCmd() string
+	GetAutomationExecutor() string
+	GetAutomationCleanup() string
+	GetAutomationCleanupExecutor() string
+	GetAutomationArgument() []A
+}
+
 func NewGroupedCreateTestCaseWithLibraryIdInput(td dao.CreateTestCaseMatchByLibraryIdInput) *GroupedCreateTestCaseWithLibraryIdInput {
 	return &GroupedCreateTestCaseWithLibraryIdInput{
 		Base: dao.CreateTestCaseMatchByLibraryIdInput{
@@ -378,6 +401,10 @@ func restoreCampaigns(ctx context.Context, client graphql.Client, db string, ass
 				//RedTools:              []RedToolInput{},
 				//DefenseToolOutcomes:   []DefenseToolOutcomeInput{},   // handle below
 			}
+			if testCaseData.AttackStart == 0 {
+				slog.WarnContext(ctx, "Attack Start is set to 0, reset to the AttackStop time", "attack-stop-time", testCaseData.AttackStop)
+				testCaseData.AttackStart = testCaseData.AttackStop
+			}
 			for _, tag := range serialized_tc.Tags {
 				testCaseData.Tags = append(testCaseData.Tags, tag.Name)
 			}
@@ -399,19 +426,7 @@ func restoreCampaigns(ctx context.Context, client graphql.Client, db string, ass
 				testCaseData.RedTeamMetadata = append(testCaseData.RedTeamMetadata, dao.MetadataKeyValuePairInput(md))
 			}
 			if serialized_tc.AutomationCmd != "" {
-				testCaseData.AttackAutomation = &dao.AttackAutomationInput{
-					Command:         serialized_tc.AutomationCmd,
-					Executor:        executorMap[serialized_tc.AutomationExecutor],
-					CleanupCommand:  serialized_tc.AutomationCleanup,
-					CleanupExecutor: executorMap[serialized_tc.AutomationCleanupExecutor],
-				}
-				for _, autoArg := range serialized_tc.AutomationArgument {
-					testCaseData.AttackAutomation.AttackVariables = append(testCaseData.AttackAutomation.AttackVariables, dao.AttackAutomationVariable{
-						InputName:  autoArg.ArgumentKey,
-						InputValue: autoArg.ArgumentValue,
-						Type:       dao.AutomationVarType(strings.ToUpper(autoArg.ArgumentType)),
-					})
-				}
+				testCaseData.AttackAutomation = buildAttackAutomationInput(&serialized_tc)
 			}
 			for _, redtool := range serialized_tc.RedTools {
 				testCaseData.RedTools = append(testCaseData.RedTools, dao.RedToolInput{
@@ -800,20 +815,7 @@ func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcas
 		ttc.BlueTeamMetadata = append(ttc.BlueTeamMetadata, dao.MetadataKeyValuePairInput(md))
 	}
 	if template_test_case.AutomationCmd != "" {
-		ttc.AttackAutomation = &dao.AttackAutomationInput{
-			Command:         template_test_case.AutomationCmd,
-			Executor:        executorMap[template_test_case.AutomationExecutor],
-			CleanupCommand:  template_test_case.AutomationCleanup,
-			CleanupExecutor: executorMap[template_test_case.AutomationCleanupExecutor],
-		}
-		for _, autoArg := range template_test_case.AutomationArgument {
-			ttc.AttackAutomation.AttackVariables = append(ttc.AttackAutomation.AttackVariables, dao.AttackAutomationVariable{
-				InputName:  autoArg.ArgumentKey,
-				InputValue: autoArg.ArgumentValue,
-				Type:       dao.AutomationVarType(strings.ToUpper(autoArg.ArgumentType)),
-			})
-
-		}
+		ttc.AttackAutomation = buildAttackAutomationInput(&template_test_case)
 	}
 	// check for the prefix
 	for _, md := range template_test_case.Metadata {
@@ -827,6 +829,30 @@ func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcas
 		}
 	}
 	return ttc
+}
+
+func buildAttackAutomationInput[A AutomationArgumentTypes, PA pointerAutomationArgs[A], T Automator[A]](automator T) *dao.AttackAutomationInput {
+	attackAutomation := &dao.AttackAutomationInput{
+		Command:         automator.GetAutomationCmd(),
+		Executor:        executorMap[automator.GetAutomationExecutor()],
+		CleanupCommand:  automator.GetAutomationCleanup(),
+		CleanupExecutor: executorMap[automator.GetAutomationCleanupExecutor()],
+	}
+	args := automator.GetAutomationArgument()
+	for _, autoArg := range args {
+		pointerAutoArg := PA(&autoArg)
+		// set the default type to be a string, if it is set to path we will use that, else use the string
+		argTypeDefault := dao.AutomationVarTypeString
+		if dao.AutomationVarType(strings.ToUpper(pointerAutoArg.GetArgumentValue())) == dao.AutomationVarTypePath {
+			argTypeDefault = dao.AutomationVarTypePath
+		}
+		attackAutomation.AttackVariables = append(attackAutomation.AttackVariables, dao.AttackAutomationVariable{
+			InputName:  pointerAutoArg.GetArgumentKey(),
+			InputValue: pointerAutoArg.GetArgumentValue(),
+			Type:       argTypeDefault,
+		})
+	}
+	return attackAutomation
 }
 
 func ParseLibraryTestcasesByIdsError(e string) ([]string, error) {
