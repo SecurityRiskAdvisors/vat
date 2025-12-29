@@ -369,7 +369,7 @@ func restoreCampaigns(ctx context.Context, client graphql.Client, db string, ass
 		// if it is not, throw an error
 		for _, serialized_tc := range c.TestCases {
 			if _, ok := outcomeStatusMap[serialized_tc.Status]; !ok {
-				slog.ErrorContext(ctx, "could not find outcome for this test case", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name)
+				slog.ErrorContext(ctx, "could not find outcome for this test case", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name, "campaign-id", c.Id, "test-case-id", serialized_tc.Id)
 				return fmt.Errorf("outcome %s not found", serialized_tc.Status)
 			}
 			testCaseData := dao.CreateTestCaseDataInput{
@@ -402,7 +402,7 @@ func restoreCampaigns(ctx context.Context, client graphql.Client, db string, ass
 				//DefenseToolOutcomes:   []DefenseToolOutcomeInput{},   // handle below
 			}
 			if testCaseData.AttackStart == 0 {
-				slog.WarnContext(ctx, "Attack Start is set to 0, reset to the AttackStop time", "attack-stop-time", testCaseData.AttackStop)
+				slog.WarnContext(ctx, "Attack Start is set to 0, reset to the AttackStop time", "attack-stop-time", testCaseData.AttackStop, "campaign-name", c.Name, "test-case-name", serialized_tc.Name)
 				testCaseData.AttackStart = testCaseData.AttackStop
 			}
 			for _, tag := range serialized_tc.Tags {
@@ -426,7 +426,22 @@ func restoreCampaigns(ctx context.Context, client graphql.Client, db string, ass
 				testCaseData.RedTeamMetadata = append(testCaseData.RedTeamMetadata, dao.MetadataKeyValuePairInput(md))
 			}
 			if serialized_tc.AutomationCmd != "" {
-				testCaseData.AttackAutomation = buildAttackAutomationInput(&serialized_tc)
+				var errors []error
+				testCaseData.AttackAutomation, errors = buildAttackAutomationInput(&serialized_tc)
+				if len(errors) > 0 {
+					for _, err := range errors {
+						slog.WarnContext(ctx, "parsing discrepencies found, they were recovered but review if needed",
+							"test-case-id", serialized_tc.Id,
+							"test-case-name", serialized_tc.Name,
+							"campaign", c.Name,
+							"campaign-id", c.Id,
+							"assessment-name", assessmentName,
+							"db", db,
+							"err", err,
+						)
+
+					}
+				}
 			}
 			for _, redtool := range serialized_tc.RedTools {
 				testCaseData.RedTools = append(testCaseData.RedTools, dao.RedToolInput{
@@ -608,7 +623,21 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		if len(ad.LibraryTestCases) > 0 {
 			for _, template_test_case := range ad.LibraryTestCases {
 				slog.DebugContext(ctx, "library test case", "name", template_test_case.Name, "template_id", template_test_case.LibraryTestCaseId)
-				input.TestCaseTemplateData = append(input.TestCaseTemplateData, createTemplateData(template_test_case))
+				tctd, errors := createTemplateData(template_test_case)
+				if len(errors) > 0 {
+					for _, err := range errors {
+						slog.WarnContext(ctx, "parsing discrepencies found, they were recovered but review if needed",
+							"test-case-id", template_test_case.Id,
+							"test-case-library-id", template_test_case.LibraryTestCaseId,
+							"test-case-name", template_test_case.Name,
+							"assessment-name", ad.Assessment.Name,
+							"db", db,
+							"err", err,
+						)
+
+					}
+				}
+				input.TestCaseTemplateData = append(input.TestCaseTemplateData, tctd)
 			}
 
 			_, err := dao.CreateTemplateTestCases(ctx, client, input)
@@ -781,7 +810,8 @@ func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNo
 	return md
 }
 
-func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase) dao.CreateTestCaseTemplateDataInput {
+func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase) (dao.CreateTestCaseTemplateDataInput, []error) {
+	var errors []error
 	ttc := dao.CreateTestCaseTemplateDataInput{
 		LibraryTestCaseId: template_test_case.LibraryTestCaseId,
 		Name:              template_test_case.Name,
@@ -815,7 +845,7 @@ func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcas
 		ttc.BlueTeamMetadata = append(ttc.BlueTeamMetadata, dao.MetadataKeyValuePairInput(md))
 	}
 	if template_test_case.AutomationCmd != "" {
-		ttc.AttackAutomation = buildAttackAutomationInput(&template_test_case)
+		ttc.AttackAutomation, errors = buildAttackAutomationInput(&template_test_case)
 	}
 	// check for the prefix
 	for _, md := range template_test_case.Metadata {
@@ -828,10 +858,10 @@ func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcas
 			break
 		}
 	}
-	return ttc
+	return ttc, errors
 }
 
-func buildAttackAutomationInput[A AutomationArgumentTypes, PA pointerAutomationArgs[A], T Automator[A]](automator T) *dao.AttackAutomationInput {
+func buildAttackAutomationInput[A AutomationArgumentTypes, PA pointerAutomationArgs[A], T Automator[A]](automator T) (*dao.AttackAutomationInput, []error) {
 	attackAutomation := &dao.AttackAutomationInput{
 		Command:         automator.GetAutomationCmd(),
 		Executor:        executorMap[automator.GetAutomationExecutor()],
@@ -839,12 +869,15 @@ func buildAttackAutomationInput[A AutomationArgumentTypes, PA pointerAutomationA
 		CleanupExecutor: executorMap[automator.GetAutomationCleanupExecutor()],
 	}
 	args := automator.GetAutomationArgument()
+	errors := make([]error, 0, len(args))
 	for _, autoArg := range args {
 		pointerAutoArg := PA(&autoArg)
 		// set the default type to be a string, if it is set to path we will use that, else use the string
 		argTypeDefault := dao.AutomationVarTypeString
-		if dao.AutomationVarType(strings.ToUpper(pointerAutoArg.GetArgumentValue())) == dao.AutomationVarTypePath {
+		if dao.AutomationVarType(strings.ToUpper(pointerAutoArg.GetArgumentType())) == dao.AutomationVarTypePath {
 			argTypeDefault = dao.AutomationVarTypePath
+		} else {
+			errors = append(errors, fmt.Errorf("cmd: %s, arugment: %s with the value: %s has the type: %s, resetting to %s", automator.GetAutomationCmd(), pointerAutoArg.GetArgumentKey(), pointerAutoArg.GetArgumentValue(), pointerAutoArg.GetArgumentType(), dao.AutomationVarTypeString))
 		}
 		attackAutomation.AttackVariables = append(attackAutomation.AttackVariables, dao.AttackAutomationVariable{
 			InputName:  pointerAutoArg.GetArgumentKey(),
@@ -852,7 +885,7 @@ func buildAttackAutomationInput[A AutomationArgumentTypes, PA pointerAutomationA
 			Type:       argTypeDefault,
 		})
 	}
-	return attackAutomation
+	return attackAutomation, errors
 }
 
 func ParseLibraryTestcasesByIdsError(e string) ([]string, error) {
