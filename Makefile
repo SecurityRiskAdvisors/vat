@@ -60,7 +60,7 @@ release-checks:
 
 .PHONY: clean-deps
 clean-deps:
-	@go clean -cache -testcache
+	@go clean -testcache
 
  # Clean up the repository (remove build artifacts and temporary files)
  .PHONY: clean
