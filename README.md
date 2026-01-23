@@ -80,6 +80,7 @@ Restore assessment data to a VECTR instance from an encrypted, compressed file:
 - `--target-assessment-name`: Overrides the name of the assessment being restored in the target instance. Required when using `--source-campaign-name`.
 - `--source-campaign-name`: Name of a specific campaign to restore from the input file. If set, `--target-assessment-name` must be an existing assessment.
 - `--override-template-assessment`: Overrides any set template name in the serialized data and loads template test cases anyway.
+- `--delete-on-failure`: In the case of a failure, delete the created assessment from VECTR. (Note: this does not affect single campaign transfers)
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
 - `--client-cert-file`: Path to the client certificate file for mTLS.
 - `--client-key-file`: Path to the client key file for mTLS.
@@ -143,6 +144,7 @@ Transfer an assessment from one VECTR instance directly to another:
 #### Optional Options
 - `--target-assessment-name`: Overrides the name of the assessment in the target instance.
 - `--override-template-assessment`: Overrides the template assessment set in the serialized data and uses the saved template data (lower fidelity).
+- `--delete-on-failure`: In the case of a failure, delete the created assessment from VECTR. (Note: this does not affect single campaign transfers)
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors). (will be applied for both source and dest)
 - `--client-cert-file`: Path to the client certificate file for mTLS. (will be applied for both source and dest)
 - `--client-key-file`: Path to the client key file for mTLS. (will be applied for both source and dest)

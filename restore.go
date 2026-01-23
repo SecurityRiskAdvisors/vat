@@ -236,20 +236,33 @@ func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db
 	return org_map, tool_map, nil
 }
 
-// 6. **Create Campaigns**:
-//   - Creates campaigns associated with the assessment.
-//   - Maps campaign metadata and organizations.
+// restoreCampaigns creates campaigns and their associated test cases within a
+// specified assessment. It handles the mapping of organizations, tools, and
+// metadata from the serialized data to the target VECTR instance.
 //
-// 7. **Create Test Cases**:
-//   - Creates test cases for each campaign.
-//   - Maps test case metadata, tags, targets, sources, defenses, and
-//     automation details.
-//   - Validates and maps test case outcomes using the `outcomeStatusMap`.
-//   - Handles defense tool outcomes by mapping serialized tool IDs to the
-//     target instance's tool IDs.
+// Parameters:
+//   - ctx: The context for managing request lifetimes and cancellations.
+//   - client: The GraphQL client for interacting with the VECTR instance.
+//   - db: The database name in the VECTR instance.
+//   - assessmentId: The ID of the assessment in the target instance where
+//     campaigns will be created.
+//   - assessmentName: The name of the assessment, used for logging and error
+//     reporting.
+//   - campaignsToRestore: A slice of campaign data objects to be restored.
+//   - orgMap: A map of organization names to their corresponding objects in
+//     the target instance, used for resolving organization IDs.
+//   - toolMap: A map of tool names to their corresponding objects in the
+//     target instance, used for resolving tool IDs.
+//   - idToolsMap: A map of serialized tool IDs to their generic tool definitions,
+//     used to map outcomes from the serialized data to the target instance.
 //
-// restoreCampaigns moves the campaign and test case creation logic into its own function.
-// It creates campaigns for a given assessment and then creates the test cases within those campaigns.
+// Returns:
+//   - error: Returns nil on success, or an error if campaign or test case creation fails.
+//
+// Error Handling:
+//   - Returns an error if campaign creation fails via the GraphQL API.
+//   - Returns an error if a test case outcome status is not found in the mapping.
+//   - Returns an error if test case creation (with or without templates) fails.
 func restoreCampaigns(ctx context.Context, client graphql.Client, db string, assessmentId string, assessmentName string, campaignsToRestore []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign, orgMap map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, toolMap map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, idToolsMap map[string]GenericBlueTool) error {
 	// Step 5: Create the campaigns
 	campaigns := dao.CreateCampaignInput{
@@ -546,12 +559,10 @@ func validateLibraryTestCases(ctx context.Context, client graphql.Client, librar
 //     missing tools along with their names and product information.
 //
 // 3. **Handle Template Assessment**:
-//   - If a template assessment is specified in the serialized data:
-//   - Checks if the template exists in the target instance.
-//   - Returns an error if the template is missing.
-//   - If no template is specified or the override flag is set:
-//   - Creates template test cases in the target instance using the
-//     serialized data.
+//   - If `OverrideAssessmentTemplate` is set, it creates template test cases
+//     directly from the serialized data.
+//   - Otherwise, it validates that the required template assessment or
+//     individual library test cases exist in the target instance.
 //
 // 4. **Override Assessment Name**:
 //   - If `optionalParams.AssessmentName` is provided, it overrides the name
@@ -560,6 +571,12 @@ func validateLibraryTestCases(ctx context.Context, client graphql.Client, librar
 // 5. **Create Assessment**:
 //   - Creates the assessment in the target instance using the serialized data.
 //   - Includes metadata and organization mappings.
+//
+// 6. **Restore Campaigns**:
+//   - Calls `restoreCampaigns` to populate the assessment with campaigns
+//     and test cases.
+//   - If `DeleteOnFailure` is true, it rolls back the assessment creation
+//     if campaign restoration fails.
 //
 // Error Handling:
 // The function returns detailed errors for the following scenarios:
@@ -742,6 +759,31 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 }
 
+// RestoreCampaign restores a specific campaign from serialized assessment data
+// into an existing assessment in the target VECTR instance. It validates
+// prerequisites such as organizations and tools before proceeding with the
+// restore.
+//
+// Parameters:
+//   - ctx: The context for managing request lifetimes and cancellations.
+//   - client: The GraphQL client for interacting with the VECTR instance.
+//   - db: The database name in the VECTR instance.
+//   - ad: The serialized assessment data containing the campaign to restore.
+//   - sourceCampaignName: The name of the campaign within the assessment data
+//     to be restored.
+//   - targetAssessmentName: The name of the existing assessment in the target
+//     instance where the campaign should be added.
+//
+// Returns:
+//   - error: Returns nil on success, or an error if the campaign cannot be
+//     found, prerequisites are missing, or the restore process fails.
+//
+// Error Handling:
+//   - Returns `ErrCampaignNotFound` if the source campaign is not in the data.
+//   - Returns an error if the target assessment is not found in the database.
+//   - Returns an error if library test cases, organizations, or tools are
+//     missing in the target instance.
+//   - Returns any error propagated from `restoreCampaigns`.
 func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, sourceCampaignName, targetAssessmentName string) error {
 	slog.InfoContext(ctx, "Starting RestoreCampaign", "db", db, "source_campaign", sourceCampaignName, "target_assessment", targetAssessmentName)
 

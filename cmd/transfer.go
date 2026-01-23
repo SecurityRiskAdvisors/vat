@@ -58,7 +58,8 @@ var transferCmd = &cobra.Command{
 		// Set up the source VECTR client
 		sourceClient, sourceVectrVersionHandler, err := util.SetupVectrClient(sourceHostname, strings.TrimSpace(string(sourceCredentials)), tlsParams)
 		if err != nil {
-			slog.ErrorContext(ctx, "could not set up connection to vectr", "hostname", hostname, "error", err)
+			slog.ErrorContext(ctx, "could not set up connection to vectr", "hostname", sourceHostname, "error", err)
+			os.Exit(1)
 		}
 
 		// get the VECTR version (side effect - check the creds as well)
@@ -78,6 +79,7 @@ var transferCmd = &cobra.Command{
 		targetClient, targetVectrVersionHandler, err := util.SetupVectrClient(targetHostname, strings.TrimSpace(string(targetCredentials)), tlsParams)
 		if err != nil {
 			slog.ErrorContext(ctx, "could not set up connection to vectr", "hostname", targetHostname, "error", err)
+			os.Exit(1)
 		}
 		// get the VECTR version (side effect - check the creds as well)
 		targetVectrVersion, err := targetVectrVersionHandler.GetVersion(ctx)

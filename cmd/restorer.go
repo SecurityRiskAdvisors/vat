@@ -96,6 +96,7 @@ var restoreCmd = &cobra.Command{
 		client, vectrVersionHandler, err := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), tlsParams)
 		if err != nil {
 			slog.ErrorContext(ctx, "could not set up connection to vectr", "hostname", hostname, "error", err)
+			os.Exit(1)
 		}
 
 		// get the VECTR version (side effect - check the creds as well)
