@@ -110,6 +110,9 @@ input AssessmentFilter {
 type AssessmentMutations {
   create(input: CreateAssessmentInput!): CreateAssessmentPayload
   createTemplate(input: CreateAssessmentTemplateInput!): CreateAssessmentPayload
+  createTemplateFromEnvAssessment(
+    input: CreateTemplateAssessmentFromEnvAssessmentInput!
+  ): CreateAssessmentPayload
   delete(input: DeleteAssessmentInput!): DeleteAssessmentPayload
   deleteTemplate(
     input: DeleteAssessmentTemplateInput!
@@ -177,6 +180,19 @@ type AttackLogProcedure {
   updateTime: Float
 }
 
+enum AttackStealthEnum {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AttackVectorEnum {
+  NETWORK
+  ADJACENT_NETWORK
+  LOCAL
+  PHYSICAL
+}
+
 type AutomationArgument {
   argumentKey: String
   argumentValue: String
@@ -233,7 +249,7 @@ type BlueTool {
   vendor: Vendor @deprecated(reason: "This field has moved to product.vendor")
   tags: [Tag] @deprecated(reason: "Field is no longer supported")
   defenseToolProduct: DefenseToolProduct
-  template: ClDefenseTool
+  template: ClDefenseTool @deprecated(reason: "Field is no longer supported")
   createTime: Float
   updateTime: Float
 }
@@ -286,6 +302,9 @@ input CampaignFilter {
 type CampaignMutations {
   create(input: CreateCampaignInput!): CreateCampaignPayload
   createTemplate(input: CreateCampaignTemplateInput!): CreateCampaignPayload
+  createTemplateFromEnvCampaign(
+    input: CreateTemplateCampaignFromEnvCampaignInput!
+  ): CreateCampaignPayload
   updateTemplate(input: UpdateCampaignTemplateInput!): UpdateCampaignPayload
   delete(input: DeleteCampaignInput!): DeleteCampaignPayload
   deleteTemplate(
@@ -306,68 +325,14 @@ input CampaignSortInput {
   field: CampaignSortField!
 }
 
-type ChangelogAnalystNote {
-  id: String
-  note: String
-
-  """
-  In cases where there's only 1 identifier (ex: Tactic), leftField is considered primary field identifier
-  """
-  leftFieldIdentifierId: String
-  rightFieldIdentifierId: String
-  rlChangelogNotebookId: Int
-  rlChangelogFieldType: ChangelogAnalystNoteType
-}
-
-"""
-"""
-enum ChangelogAnalystNoteType {
-  TEST_CASE
-  TACTIC
-  TECHNIQUE
-}
-
-type ChangelogAnalystNotebook {
-  id: String
-  name: String
-  description: String
-  rightEnvAssessmentId: Int
-  leftEnvAssessmentId: Int
-  notes: [ChangelogAnalystNote]
-}
-
-type ChangelogAnalystNotebookConnection {
-  """
-  List of Notebooks
-  """
-  nodes: [ChangelogAnalystNotebook]
-
-  """
-  Information to aid in pagination
-  """
-  pageInfo: PageInfo
-}
-
-"""
-"""
-type ChangelogMutations {
-  createNotebook(
-    input: [CreateChangelogNotebookDataInput!]
-  ): CreateChangelogAnalystNotebookPayload
-  updateNotebook(
-    input: [UpdateChangelogNotebookDataInput!]
-  ): UpdateChangelogAnalystNotebookPayload
-  deleteNotebook(
-    input: DeleteChangelogNotebookInput!
-  ): DeleteChangelogNotebookPayload
-  deleteAnalystNote(
-    input: DeleteChangelogAnalystNoteInput!
-  ): DeleteChangelogAnalystNotePayload
-}
-
 type ClDefenseTool {
-  id: String!
-  name: String
+  id: String! @deprecated(reason: "No longer in use")
+  name: String @deprecated(reason: "No longer in use")
+}
+
+input CloneLibraryDefenseLayerInput {
+  db: String!
+  libraryDefenseLayerIds: [String!]
 }
 
 input CloneTestCaseTemplateInput {
@@ -492,23 +457,28 @@ input CreateCampaignTemplateInput {
   campaignTemplateData: [CreateCampaignTemplateDataInput!]!
 }
 
-input CreateChangelogAnalystNoteInput {
-  note: String!
-  noteType: ChangelogAnalystNoteType!
-  leftFieldIdentifierId: String
-  rightFieldIdentifierId: String
-}
-
-type CreateChangelogAnalystNotebookPayload {
-  notebooks: [ChangelogAnalystNotebook]
-}
-
-input CreateChangelogNotebookDataInput {
+input CreateDefenseLayerDataInput {
   name: String!
-  description: String!
-  leftEnvAssessmentId: Int!
-  rightEnvAssessmentId: Int!
-  notes: [CreateChangelogAnalystNoteInput!]!
+  description: String
+  icon: String
+}
+
+input CreateDefenseLayerInput {
+  db: String!
+  defenseLayerData: [CreateDefenseLayerDataInput!]
+}
+
+input CreateDefenseToolDataInput {
+  name: String!
+  description: String
+  active: Boolean
+  defenseToolProductId: String!
+  defenseLayerIds: [String!]
+}
+
+input CreateDefenseToolInput {
+  db: String!
+  createDefenseToolData: [CreateDefenseToolDataInput!]
 }
 
 input CreateDefenseToolProductDataInput {
@@ -535,6 +505,16 @@ input CreateFavoriteTagInput {
 type CreateFavoriteTagPayload {
   status: SimpleOperationStatus!
   message: String!
+}
+
+input CreateLibraryDefenseLayerDataInput {
+  name: String!
+  description: String
+  icon: String
+}
+
+input CreateLibraryDefenseLayerInput {
+  defenseLayerData: [CreateLibraryDefenseLayerDataInput!]
 }
 
 input CreateSourceDataInput {
@@ -581,6 +561,32 @@ type CreateTargetPayload {
   target: [Target]
 }
 
+input CreateTemplateAssessmentFromEnvAssessmentInput {
+  envAssessmentId: Int!
+  action: CreateTemplateFromEnvAction
+  clAssessmentIdToAssignTo: String
+  newTemplateName: String
+  updateTemplateIdReferences: Boolean
+  campaigns: [SaveAsTemplateDetail!]
+  testCases: [SaveAsTemplateDetail!]
+}
+
+input CreateTemplateCampaignFromEnvCampaignInput {
+  updateTemplateIdReferences: Boolean
+  campaigns: [SaveAsTemplateDetail!]
+  testCases: [SaveAsTemplateDetail!]
+}
+
+enum CreateTemplateFromEnvAction {
+  CREATE
+  UPDATE
+}
+
+input CreateTemplateTestCaseFromEnvTestCaseInput {
+  updateTemplateIdReferences: Boolean
+  testCases: [SaveAsTemplateDetail!]
+}
+
 input CreateTestCaseAndTemplateMatchByNameInput {
   db: String!
   campaignId: String!
@@ -621,6 +627,10 @@ input CreateTestCaseDataInput {
   overrideOutcome: Boolean
   outcomeNotes: String
   detectionTime: Float
+
+  """
+  For legacy outcomes only
+  """
   detectingDefenseTools: [DefenseToolInput!]
   defenseToolOutcomes: [DefenseToolOutcomeInput!]
 
@@ -750,9 +760,39 @@ input DefenseLayerFilter {
   name: ListOperator_String
 }
 
+type DefenseLayerMutationPayload {
+  defenseLayers: [DefensiveLayer]
+}
+
+type DefenseLayerMutations {
+  create(input: CreateDefenseLayerInput!): DefenseLayerMutationPayload
+  update(input: UpdateDefenseLayerInput!): DefenseLayerMutationPayload
+  clone(input: CloneLibraryDefenseLayerInput!): DefenseLayerMutationPayload
+  createLibrary(
+    input: CreateLibraryDefenseLayerInput!
+  ): DefenseLayerMutationPayload
+  updateLibrary(
+    input: UpdateLibraryDefenseLayerInput!
+  ): DefenseLayerMutationPayload
+  delete(input: DeleteDefenseLayerInput!): DeleteDefenseLayerPayload
+  deleteLibrary(
+    input: DeleteLibraryDefenseLayerInput!
+  ): DeleteDefenseLayerPayload
+}
+
 input DefenseToolInput {
   name: String!
   vendor: String
+}
+
+type DefenseToolMutationPayload {
+  defenseTools: [BlueTool]
+}
+
+type DefenseToolMutations {
+  create(input: CreateDefenseToolInput!): DefenseToolMutationPayload
+  update(input: UpdateDefenseToolInput!): DefenseToolMutationPayload
+  delete(input: DeleteDefenseToolInput!): DeleteDefenseToolPayload
 }
 
 type DefenseToolOutcome {
@@ -854,20 +894,20 @@ type DeleteCampaignTemplatePayload {
   deletedIds: [String!]
 }
 
-input DeleteChangelogAnalystNoteInput {
-  idsToDelete: [String!]
+input DeleteDefenseLayerInput {
+  ids: [String!]!
 }
 
-type DeleteChangelogAnalystNotePayload {
-  deletedIds: [Int]
+type DeleteDefenseLayerPayload {
+  ids: [String!]
 }
 
-input DeleteChangelogNotebookInput {
-  idsToDelete: [String!]
+input DeleteDefenseToolInput {
+  ids: [String!]!
 }
 
-type DeleteChangelogNotebookPayload {
-  deletedIds: [Int]
+type DeleteDefenseToolPayload {
+  ids: [String!]
 }
 
 input DeleteDefenseToolProductInput {
@@ -886,6 +926,10 @@ input DeleteFavoriteTagInput {
 type DeleteFavoriteTagPayload {
   status: SimpleOperationStatus!
   message: String!
+}
+
+input DeleteLibraryDefenseLayerInput {
+  ids: [String!]!
 }
 
 input DeleteTestCaseInput {
@@ -916,6 +960,12 @@ type DeleteUnstructuredLogPayload {
 type DeleteUploadedSSLConfigPayload {
   status: SimpleOperationStatus!
   message: String
+}
+
+input EnvTestCasesByLibraryTestCaseIdFilter {
+  envAssessmentId: Int
+  envTestCaseIds: [Int!]
+  environment: String
 }
 
 type ExecutionArtifact {
@@ -977,55 +1027,10 @@ type FavoriteTagMutations {
   ): PrimeDefaultFavoriteTagsForUserPayload
 }
 
-"""
-enum InsightsAnalystNoteType {
-    TEST_CASE,
-    TACTIC,
-    TECHNIQUE
-}
-type InsightsAnalystNotebook {
-    id: String
-    name: String
-    description: String
-    envAssessmentId:Int
-    insightsIndexId:Int
-    notes:[InsightsAnalystNote]
-}
-
-type InsightsAnalystNote {
-    id:String
-    note:String
-    fieldIdentifierId:String
-    notebookId:Int
-    fieldType:InsightsAnalystNoteType
-}
-
-type InsightsAnalystNotebookConnection{
-    # List of Notebooks
-    nodes: [InsightsAnalystNotebook]
-
-    # Information to aid in pagination
-    pageInfo: PageInfo
-}
-"""
-type InsightsIndex {
-  id: Int
-  name: String
-  shortName: String
-}
-
-type InsightsTrending {
-  index: InsightsIndex!
-  bundles: [InsightsTrendingBundle]
-}
-
-type InsightsTrendingBundle {
-  id: Int!
-  score: Float!
-  periodStart: Float!
-  periodEnd: Float!
-  quartile1: Float!
-  quartile3: Float!
+enum InternalExternalEnum {
+  INTERNAL
+  EXTERNAL
+  BOTH
 }
 
 type KillChain {
@@ -1053,6 +1058,49 @@ type KillChainConnection {
 
 input ListOperator_String {
   includes: [String!]
+}
+
+enum MatchType {
+  ID
+  NAME
+}
+
+type MatchingAssessmentResult {
+  envAssessmentId: Int!
+  assessmentMatches: [MatchingClAssessment]
+  campaignMatches: [MatchingClCampaign]
+  testCaseMatches: [MatchingClTestCase]
+}
+
+type MatchingCampaignResult {
+  envCampaignId: Int!
+  campaignMatches: [MatchingClCampaign]
+  testCaseMatches: [MatchingClTestCase]
+}
+
+type MatchingClAssessment {
+  matchType: MatchType
+  matchValue: String
+  matchingTemplate: Assessment
+}
+
+type MatchingClCampaign {
+  envId: Int
+  matchType: MatchType
+  matchValue: String
+  matchingTemplate: Campaign
+}
+
+type MatchingClTestCase {
+  envId: Int
+  matchType: MatchType
+  matchValue: String
+  matchingTemplate: TestCase
+}
+
+type MatchingTestCaseResult {
+  envTestCaseId: Int!
+  testCaseMatches: [MatchingClTestCase]
 }
 
 input MetadataFilter {
@@ -1117,7 +1165,8 @@ type Mutation {
   favoriteTag: FavoriteTagMutations
   unstructuredLog: UnstructuredLogMutations
   defenseToolProduct: DefenseToolProductMutations
-  changelogNotebook: ChangelogMutations
+  defenseTool: DefenseToolMutations
+  defenseLayer: DefenseLayerMutations
 }
 
 input NameFilter {
@@ -1275,12 +1324,6 @@ type PhaseConnection {
   pageInfo: PageInfo
 }
 
-type PremiumFeature {
-  id: String
-  importantData: String
-  connectedFeatures: [PremiumFeature]
-}
-
 input PrimeDefaultFavoriteTagsForUserInput {
   userId: String!
 }
@@ -1395,6 +1438,11 @@ type Query {
     """
     ids: [String]!
   ): AssessmentConnection
+  getMatchingClAssessmentsForEnvAssessment(
+    envAssessmentId: Int!
+    envAssessmentName: String
+    clAssessmentId: String
+  ): MatchingAssessmentResult
 
   """
   Query information about a Campaign
@@ -1463,6 +1511,11 @@ type Query {
     orderBy: BaseSortOrder = { direction: ASC, field: NAME }
   ): CampaignConnection
   libraryCampaignsByIds(ids: [String]!): CampaignConnection
+  getMatchingClCampaignsForEnvCampaign(
+    envCampaignId: Int!
+    envCampaignName: String
+    clCampaignId: String
+  ): MatchingCampaignResult
 
   """
   Query for Database list
@@ -1629,41 +1682,6 @@ type Query {
     """
     db: String!
 
-    """
-    A filter to return a subset of data
-    """
-    filter: NameFilter
-
-    """
-    Returns the first _n_ elements from the list
-    """
-    first: Int
-
-    """
-    Returns the elements in the list that come after the specified cursor
-    """
-    after: String
-
-    """
-    Sorting options
-    """
-    orderBy: BaseSortOrder = { direction: ASC, field: NAME }
-  ): BlueToolConnection
-
-  """
-  Query information about a blue / defense tool
-  """
-  libraryBluetool(
-    """
-    ID of the blue tool to query
-    """
-    id: String!
-  ): BlueTool
-
-  """
-  Query for all blue tools in the Content Library
-  """
-  libraryBluetools(
     """
     A filter to return a subset of data
     """
@@ -1996,6 +2014,46 @@ type Query {
     """
     orderBy: TestCaseSortOrder = { direction: ASC, field: NAME }
   ): TestCaseConnection
+  envTestCasesByLibraryTestCaseId(
+    environmentName: String
+    libraryTestCaseId: String!
+    filter: EnvTestCasesByLibraryTestCaseIdFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: TestCaseSortOrder = { direction: ASC, field: NAME }
+  ): TestCaseConnection
+  envTestCasesByDefenseToolId(
+    environmentName: String!
+    envDefenseToolId: Int!
+    filter: EnvTestCasesByLibraryTestCaseIdFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Sorting options
+    """
+    orderBy: TestCaseSortOrder = { direction: ASC, field: NAME }
+  ): TestCaseConnection
 
   """
   Query for Test Cases in the given ID list and database
@@ -2052,6 +2110,11 @@ type Query {
     """
     ids: [String]!
   ): TestCaseConnection
+  getMatchingClTestCasesForEnvTestCase(
+    envTestCaseId: Int!
+    envTestCaseName: String
+    clTestCaseId: String
+  ): MatchingTestCaseResult
   vendor(
     """
     ID of the Vendor to query
@@ -2135,47 +2198,26 @@ type Query {
   vectrAppConfig: VectrAppConfig
   vectrUploadedSSLConfig: UploadedVectrSSLConfig
   vectrSSLConfig: VectrSSLConfig
-  premiumFeature(db: String, id: String!): PremiumFeature
+}
 
-  """
-  Query for all Organizations
-  """
-  changelogAnalystNotebooks: ChangelogAnalystNotebookConnection
+input ReassignTestCaseDefenseToolInput {
+  from: Int!
+  to: Int!
+  condition: TestCaseReassignCondition!
+}
 
-  """
-  Query information about notes for 2 assessments
-  """
-  changelogAnalystNotebookByAssessmentIds(
-    """
-    ID of the Assessment to query
-    """
-    envAssessmentId1: String!
-    envAssessmentId2: String!
-  ): ChangelogAnalystNotebookConnection
-  changelogAnalystNotebookByNotebookId(
-    """
-    ID of the Assessment to query
-    """
-    changelogNotebookId: String!
-  ): ChangelogAnalystNotebookConnection
+type ReassignTestCaseDefenseToolPayload {
+  testCaseIdsModified: [Int!]
+}
 
-  """
-  Query for all Organizations
-  insightsAnalystNotebooks: InsightsAnalystNotebookConnection
-  Query information about notes for 2 assessments
-     insightsAnalystNotebookByAssessmentIds(
-         # ID of the Assessment to query
-         envAssessmentId: String!
-         insightsIndexId:String!
-     ): InsightsAnalystNotebookConnection
+input ReassignTestCaseTemplateInput {
+  from: String!
+  to: String!
+  condition: TestCaseReassignCondition
+}
 
-     insightsAnalystNotebookByNotebookId(
-         # ID of the Assessment to query
-         notebookId: String!
-     ): InsightsAnalystNotebookConnection
-  """
-  insightsIndexes: [InsightsIndex]
-  insightsTrending(indexIds: [Int!]!): [InsightsTrending]
+type ReassignTestCaseTemplatePayload {
+  testCaseIdsModified: [Int!]
 }
 
 type RedTool {
@@ -2225,6 +2267,13 @@ type ReportingBucketTreeNode {
   children: [OutcomeTreeNode]
 }
 
+input SaveAsTemplateDetail {
+  id: Int
+  action: CreateTemplateFromEnvAction
+  newTemplateName: String
+  assignTo: String
+}
+
 enum SimpleOperationStatus {
   SUCCESS
   ERROR
@@ -2233,6 +2282,7 @@ enum SimpleOperationStatus {
 type Source {
   id: String!
   name: String
+  assetPropertyTypeId: String
   phases: [Phase] @deprecated(reason: "This field is no longer supported.")
   tags: [Tag] @deprecated(reason: "This field is no longer supported.")
   createTime: Float
@@ -2300,6 +2350,7 @@ enum TagTypeEnum {
 type Target {
   id: String!
   name: String
+  assetPropertyTypeId: String
   phases: [Phase] @deprecated(reason: "This field is no longer supported.")
   tags: [Tag] @deprecated(reason: "This field is no longer supported.")
   description: String
@@ -2321,13 +2372,18 @@ type TestCase {
   name: String
   description: String
   method: String
+    @deprecated(
+      reason: "This field is deprecated and has been superseded by 'techniqueName'."
+    )
   templateId: String
     @deprecated(
       reason: "This field is deprecated and has been superseded by 'libraryTestCaseId'. "
     )
   libraryTestCaseId: String
   mitreId: String
+  capecId: String
   techniqueName: String
+  icon: String
   deprecated: Boolean
   organizations: [Organization!]
   defensiveLayers: [DefensiveLayer]
@@ -2351,6 +2407,7 @@ type TestCase {
     )
   tags: [Tag]
   phase: Phase
+  privilegeRequired: Boolean
   associatedLibraryCampaigns: [Campaign]
   automationCmd: String
   automationExecutor: String
@@ -2378,7 +2435,13 @@ type TestCase {
   dataVer: Int
   createTime: Float
   updateTime: Float
+  deprecationTime: Float
   defenseToolOutcomes: [DefenseToolOutcome]
+  internalExternal: InternalExternalEnum
+  attackStealth: AttackStealthEnum
+  threatSophistication: ThreatSophisticationEnum
+  attackVector: AttackVectorEnum
+  importEventId: String
 }
 
 type TestCaseConnection {
@@ -2405,9 +2468,19 @@ input TestCaseFilter {
   isAutomationAvailable: Boolean
   privilegesRequired: Boolean
   defenseLayers: DefenseLayerFilter
+  operatorGuidance: StringOperator
+  deprecated: Boolean
+
+  """
+  Supports only name,description,operatorGuidance,techniqueName,phase
+  """
+  or: [TestCaseFilter]
 }
 
 type TestCaseMutations {
+  createTemplateFromEnvTestCase(
+    input: CreateTemplateTestCaseFromEnvTestCaseInput!
+  ): CreateTestCasePayload
   cloneTemplate(input: CloneTestCaseTemplateInput!): CreateTestCasePayload
 
   """
@@ -2435,11 +2508,23 @@ type TestCaseMutations {
   deleteTemplate(
     input: DeleteTestCaseTemplateInput!
   ): DeleteTestCaseTemplatePayload
+  reassignDefenseTool(
+    input: ReassignTestCaseDefenseToolInput!
+  ): ReassignTestCaseDefenseToolPayload
+  reassignTestCaseTemplate(
+    input: ReassignTestCaseTemplateInput!
+  ): ReassignTestCaseTemplatePayload
   update(input: UpdateTestCaseInput!): UpdateTestCasePayload
   updateTemplate(input: UpdateTestCaseTemplateInput!): UpdateTestCasePayload
   addAttackLogProcedure(
     input: AddAttackLogToTestCaseInput!
   ): AddAttackLogToTestCasePayload
+}
+
+input TestCaseReassignCondition {
+  environment: String
+  assessmentId: Int
+  testCaseIds: [Int!]
 }
 
 """
@@ -2491,6 +2576,28 @@ enum TestCaseStatus {
   InProgress
   Paused
   Abandon
+}
+
+enum ThreatSophisticationEnum {
+  NONE
+  MINIMAL
+
+  """
+  Low
+  """
+  INTERMEDIATE
+
+  """
+  Medium
+  """
+  ADVANCED
+
+  """
+  High
+  """
+  EXPERT
+  INNOVATOR
+  STRATEGIC
 }
 
 type TimelineEvent {
@@ -2575,23 +2682,31 @@ input UpdateCampaignTemplateInput {
   campaignTemplateData: [UpdateCampaignTemplateDataInput!]!
 }
 
-input UpdateChangelogAnalystNoteInput {
-  id: String
-  note: String!
-  noteType: String
-  leftFieldIdentifierId: String
-  rightFieldIdentifierId: String
-}
-
-type UpdateChangelogAnalystNotebookPayload {
-  notebooks: [ChangelogAnalystNotebook]
-}
-
-input UpdateChangelogNotebookDataInput {
+input UpdateDefenseLayerDataInput {
   id: String!
-  name: String
+  name: String!
   description: String
-  notes: [UpdateChangelogAnalystNoteInput!]
+  libraryDefenseLayerId: String
+  icon: String
+}
+
+input UpdateDefenseLayerInput {
+  db: String!
+  defenseLayerData: [UpdateDefenseLayerDataInput!]
+}
+
+input UpdateDefenseToolDataInput {
+  id: String!
+  name: String!
+  description: String
+  active: Boolean
+  defenseToolProductId: String!
+  defenseLayerIds: [String!]
+}
+
+input UpdateDefenseToolInput {
+  db: String!
+  updateDefenseToolData: [UpdateDefenseToolDataInput!]
 }
 
 input UpdateDefenseToolProductDataInput {
@@ -2609,6 +2724,17 @@ input UpdateDefenseToolProductInput {
 
 type UpdateDefenseToolProductPayload {
   defenseToolProducts: [DefenseToolProduct]
+}
+
+input UpdateLibraryDefenseLayerDataInput {
+  id: String!
+  name: String!
+  description: String
+  icon: String
+}
+
+input UpdateLibraryDefenseLayerInput {
+  defenseLayerData: [UpdateLibraryDefenseLayerDataInput!]
 }
 
 """

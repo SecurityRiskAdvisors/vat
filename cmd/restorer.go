@@ -96,6 +96,7 @@ var restoreCmd = &cobra.Command{
 		client, vectrVersionHandler, err := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), tlsParams)
 		if err != nil {
 			slog.ErrorContext(ctx, "could not set up connection to vectr", "hostname", hostname, "error", err)
+			os.Exit(1)
 		}
 
 		// get the VECTR version (side effect - check the creds as well)
@@ -115,6 +116,7 @@ var restoreCmd = &cobra.Command{
 			optionalParams := &vat.RestoreOptionalParams{
 				AssessmentName:             targetAssessmentName,
 				OverrideAssessmentTemplate: overrideAssessmentTemplate,
+				DeleteOnFailure:            deleteOnFailure,
 			}
 
 			// Restore the assessment
@@ -148,6 +150,7 @@ func init() {
 	restoreCmd.Flags().StringVar(&passphraseFile, "passphrase-file", "", "Path to the file containing the decryption passphrase")
 	restoreCmd.Flags().StringVar(&targetAssessmentName, "target-assessment-name", "", "The assessment name to set in the new instance. Required when using --source-campaign-name.")
 	restoreCmd.Flags().BoolVar(&overrideAssessmentTemplate, "override-template-assessment", false, "Override any set template name in the serialized data and load template test cases anyway")
+	restoreCmd.Flags().BoolVar(&deleteOnFailure, "delete-on-failure", false, "In the case of a failure, delete the created assessment from VECTR (does not delete template information). Does not affect single campaign inserts.")
 	restoreCmd.Flags().StringVar(&sourceCampaignName, "source-campaign-name", "", "Name of a specific campaign to restore from the input file. If set, --target-assessment-name must be an existing assessment.")
 
 	// Mark flags as required
