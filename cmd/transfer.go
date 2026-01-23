@@ -104,6 +104,7 @@ var transferCmd = &cobra.Command{
 			optionalParams := &vat.RestoreOptionalParams{
 				AssessmentName:             targetAssessmentName,
 				OverrideAssessmentTemplate: overrideAssessmentTemplate,
+				DeleteOnFailure:            deleteOnFailure,
 			}
 			// Original full assessment transfer logic
 			slog.InfoContext(targetVersionContext, "Transferring assessment data to target instance", "hostname", targetHostname, "db", targetDB)
@@ -141,6 +142,7 @@ func init() {
 	transferCmd.Flags().StringVar(&assessmentName, "assessment-name", "", "Name of the assessment to transfer (required)")
 	transferCmd.Flags().StringVar(&targetAssessmentName, "target-assessment-name", "", "The assessment name to set in the new instance")
 	transferCmd.Flags().BoolVar(&overrideAssessmentTemplate, "override-template-assessment", false, "Ignore the template name in the serialized data and load template test cases anyway")
+	transferCmd.Flags().BoolVar(&deleteOnFailure, "delete-on-failure", false, "In the case of a failure, delete the created assessment from VECTR (does not delete template information). Does not affect single campaign inserts.")
 	transferCmd.Flags().StringVar(&sourceCampaignName, "source-campaign-name", "", "Name of a specific campaign to transfer. If set, --target-assessment-name must be an existing assessment.")
 
 	// Mark flags as required

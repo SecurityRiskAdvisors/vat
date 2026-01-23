@@ -19,6 +19,7 @@ import (
 type RestoreOptionalParams struct {
 	AssessmentName             string // Set desired assessment name to this one, if blank, use existing assessment name
 	OverrideAssessmentTemplate bool   // Flag to override using the use of the existing template assessment. Directly import the tests instead (lower fidelty)
+	DeleteOnFailure            bool   // Flag to delete assessments if the campaign import failed
 }
 
 var ErrOrgNotFound = fmt.Errorf("could not find org(s)")
@@ -147,75 +148,6 @@ func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.Cr
 	return results
 }
 
-// RestoreAssessment restores an assessment to a VECTR instance by deserializing
-// and importing serialized assessment data. It ensures that all required
-// organizations, tools, and templates exist in the target instance before
-// creating the assessment, campaigns, and test cases.
-//
-// Parameters:
-//   - ctx: The context for managing request lifetimes and cancellations.
-//   - client: The GraphQL client for interacting with the VECTR instance.
-//   - db: The database name in the VECTR instance.
-//   - ad: The serialized assessment data to restore, including organizations,
-//     tools, campaigns, and test cases.
-//   - optionalParams: Optional parameters to customize the restore process,
-//     such as overriding the assessment name or skipping template validation.
-//
-// Returns:
-//   - error: Returns an error if any step of the restore process fails. The error
-//     message provides details about the failure.
-//
-// Workflow:
-// 1. **Validate Organizations**:
-//   - Checks if all organizations in the serialized data exist in the target
-//     VECTR instance.
-//   - If any organization is missing, the function returns an error listing
-//     the missing organizations.
-//
-// 2. **Validate Tools**:
-//   - Verifies that all tools in the serialized data exist in the target
-//     instance.
-//   - If any tools are missing, the function returns an error listing the
-//     missing tools along with their names and product information.
-//
-// 3. **Handle Template Assessment**:
-//   - If a template assessment is specified in the serialized data:
-//   - Checks if the template exists in the target instance.
-//   - Returns an error if the template is missing.
-//   - If no template is specified or the override flag is set:
-//   - Creates template test cases in the target instance using the
-//     serialized data.
-//
-// 4. **Override Assessment Name**:
-//   - If `optionalParams.AssessmentName` is provided, it overrides the name
-//     of the assessment in the serialized data.
-//
-// 5. **Create Assessment**:
-//   - Creates the assessment in the target instance using the serialized data.
-//   - Includes metadata and organization mappings.
-//
-// 6. **Create Campaigns**:
-//   - Creates campaigns associated with the assessment.
-//   - Maps campaign metadata and organizations.
-//
-// 7. **Create Test Cases**:
-//   - Creates test cases for each campaign.
-//   - Maps test case metadata, tags, targets, sources, defenses, and
-//     automation details.
-//   - Validates and maps test case outcomes using the `outcomeStatusMap`.
-//   - Handles defense tool outcomes by mapping serialized tool IDs to the
-//     target instance's tool IDs.
-//
-// Error Handling:
-// The function returns detailed errors for the following scenarios:
-//   - Missing organizations (`ErrOrgNotFound`).
-//   - Missing tools (`ErrMissingTools`).
-//   - Missing library assessments (`ErrMissingLibraryAssessment`).
-//   - A local assessment already exists (`ErrAssessmentAlreadyExists`).
-//   - Invalid or blank assessment name overrides (`ErrInvalidAssessmentName`).
-//   - GraphQL API errors during organization, tool, template, assessment,
-//     campaign, or test case creation.
-//
 // validateRestorePrerequisites checks if organizations and tools required for the assessment restore
 // exist in the target VECTR instance.
 // It returns a map of organization names to their VECTR objects, a map of tool names to their VECTR objects,
@@ -304,6 +236,18 @@ func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db
 	return org_map, tool_map, nil
 }
 
+// 6. **Create Campaigns**:
+//   - Creates campaigns associated with the assessment.
+//   - Maps campaign metadata and organizations.
+//
+// 7. **Create Test Cases**:
+//   - Creates test cases for each campaign.
+//   - Maps test case metadata, tags, targets, sources, defenses, and
+//     automation details.
+//   - Validates and maps test case outcomes using the `outcomeStatusMap`.
+//   - Handles defense tool outcomes by mapping serialized tool IDs to the
+//     target instance's tool IDs.
+//
 // restoreCampaigns moves the campaign and test case creation logic into its own function.
 // It creates campaigns for a given assessment and then creates the test cases within those campaigns.
 func restoreCampaigns(ctx context.Context, client graphql.Client, db string, assessmentId string, assessmentName string, campaignsToRestore []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign, orgMap map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, toolMap map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, idToolsMap map[string]GenericBlueTool) error {
@@ -570,6 +514,62 @@ func validateLibraryTestCases(ctx context.Context, client graphql.Client, librar
 	return nil
 }
 
+// RestoreAssessment restores an assessment to a VECTR instance by deserializing
+// and importing serialized assessment data. It ensures that all required
+// organizations, tools, and templates exist in the target instance before
+// creating the assessment, campaigns, and test cases.
+//
+// Parameters:
+//   - ctx: The context for managing request lifetimes and cancellations.
+//   - client: The GraphQL client for interacting with the VECTR instance.
+//   - db: The database name in the VECTR instance.
+//   - ad: The serialized assessment data to restore, including organizations,
+//     tools, campaigns, and test cases.
+//   - optionalParams: Optional parameters to customize the restore process,
+//     such as overriding the assessment name or skipping template validation.
+//
+// Returns:
+//   - error: Returns an error if any step of the restore process fails. The error
+//     message provides details about the failure.
+//
+// Workflow:
+// 1. **Validate Organizations**:
+//   - Checks if all organizations in the serialized data exist in the target
+//     VECTR instance.
+//   - If any organization is missing, the function returns an error listing
+//     the missing organizations.
+//
+// 2. **Validate Tools**:
+//   - Verifies that all tools in the serialized data exist in the target
+//     instance.
+//   - If any tools are missing, the function returns an error listing the
+//     missing tools along with their names and product information.
+//
+// 3. **Handle Template Assessment**:
+//   - If a template assessment is specified in the serialized data:
+//   - Checks if the template exists in the target instance.
+//   - Returns an error if the template is missing.
+//   - If no template is specified or the override flag is set:
+//   - Creates template test cases in the target instance using the
+//     serialized data.
+//
+// 4. **Override Assessment Name**:
+//   - If `optionalParams.AssessmentName` is provided, it overrides the name
+//     of the assessment in the serialized data.
+//
+// 5. **Create Assessment**:
+//   - Creates the assessment in the target instance using the serialized data.
+//   - Includes metadata and organization mappings.
+//
+// Error Handling:
+// The function returns detailed errors for the following scenarios:
+//   - Missing organizations (`ErrOrgNotFound`).
+//   - Missing tools (`ErrMissingTools`).
+//   - Missing library assessments (`ErrMissingLibraryAssessment`).
+//   - A local assessment already exists (`ErrAssessmentAlreadyExists`).
+//   - Invalid or blank assessment name overrides (`ErrInvalidAssessmentName`).
+//   - GraphQL API errors during organization, tool, template, assessment,
+//     campaign, or test case creation.
 func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, optionalParams *RestoreOptionalParams) error {
 	slog.InfoContext(ctx, "Starting RestoreAssessment", "db", db, "assessment_name", ad.Assessment.Name)
 
@@ -720,6 +720,20 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	err = restoreCampaigns(ctx, client, db, a.Assessment.Create.Assessments[0].Id, ad.Assessment.Name, ad.Assessment.Campaigns, org_map, tool_map, ad.IdToolsMap)
 	if err != nil {
+		if optionalParams.DeleteOnFailure {
+			slog.ErrorContext(ctx, "deleting assessment since a failure occured", "assessment-name", ad.Assessment.Name, "db", db)
+			ids, delErr := dao.DeleteAssessment(ctx, client, db, []string{a.Assessment.Create.Assessments[0].Id})
+			if delErr != nil {
+				// uh oh, things are very bad here.
+				slog.ErrorContext(ctx, "could not delete assessment", "error", delErr, "assessment-name", ad.Assessment.Name, "db", db)
+			} else { // use an else to fall back to the same return below since we want to output both problems
+				if len(ids.Assessment.Delete.DeletedIds) == 1 && strings.EqualFold(ids.Assessment.Delete.DeletedIds[0], a.Assessment.Create.Assessments[0].Id) {
+					slog.InfoContext(ctx, "Assessment cleaned up successfully...", "assessment-name", ad.Assessment.Name, "db", db)
+				} else {
+					slog.ErrorContext(ctx, "delete mismatch, the wrong item was deleted (not sure how this happened)", "expected-id", a.Assessment.Create.Assessments[0].Id, "deleted-id(s)", ids.Assessment.Delete.DeletedIds)
+				}
+			}
+		}
 		return fmt.Errorf("could not create campaigns and test cases for assessment %s: %w", ad.Assessment.Name, err)
 	}
 

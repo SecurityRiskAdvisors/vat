@@ -15,6 +15,7 @@ var (
 	insecure                   bool
 	targetAssessmentName       string
 	overrideAssessmentTemplate bool
+	deleteOnFailure            bool
 	clientCertFile             string
 	clientKeyFile              string
 	caCertFiles                []string

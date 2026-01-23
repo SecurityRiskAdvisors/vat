@@ -1,0 +1,7 @@
+mutation DeleteAssessment($db: String!, $ids: [String!]!) {
+  assessment {
+    delete(input: { db: $db, ids: $ids }) {
+      deletedIds
+    }
+  }
+}
