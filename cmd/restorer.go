@@ -117,6 +117,7 @@ var restoreCmd = &cobra.Command{
 				AssessmentName:             targetAssessmentName,
 				OverrideAssessmentTemplate: overrideAssessmentTemplate,
 				DeleteOnFailure:            deleteOnFailure,
+				ForceEnvOnly:               forceEnvOnly,
 			}
 
 			// Restore the assessment
@@ -130,8 +131,11 @@ var restoreCmd = &cobra.Command{
 				slog.ErrorContext(ctx, "--target-assessment-name is required when using --source-campaign-name")
 				os.Exit(1)
 			}
+			optionalParams := &vat.RestoreOptionalParams{
+				ForceEnvOnly: forceEnvOnly,
+			}
 			slog.InfoContext(ctx, "Restoring campaign", "source-campaign", sourceCampaignName, "target-assessment", targetAssessmentName)
-			if err := vat.RestoreCampaign(versionContext, client, db, &assessmentData, sourceCampaignName, targetAssessmentName); err != nil {
+			if err := vat.RestoreCampaign(versionContext, client, db, &assessmentData, sourceCampaignName, targetAssessmentName, optionalParams); err != nil {
 				slog.ErrorContext(versionContext, "Failed to restore campaign", "error", err)
 				os.Exit(1)
 			}
@@ -152,6 +156,7 @@ func init() {
 	restoreCmd.Flags().BoolVar(&overrideAssessmentTemplate, "override-template-assessment", false, "Override any set template name in the serialized data and load template test cases anyway")
 	restoreCmd.Flags().BoolVar(&deleteOnFailure, "delete-on-failure", false, "In the case of a failure, delete the created assessment from VECTR (does not delete template information). Does not affect single campaign inserts.")
 	restoreCmd.Flags().StringVar(&sourceCampaignName, "source-campaign-name", "", "Name of a specific campaign to restore from the input file. If set, --target-assessment-name must be an existing assessment.")
+	restoreCmd.Flags().BoolVar(&forceEnvOnly, "force-env-only", false, "Ignore any templates associated with test cases, import them in the env only (DANGEROUS)")
 
 	// Mark flags as required
 	restoreCmd.MarkFlagsOneRequired("db", "env")

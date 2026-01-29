@@ -107,6 +107,7 @@ var transferCmd = &cobra.Command{
 				AssessmentName:             targetAssessmentName,
 				OverrideAssessmentTemplate: overrideAssessmentTemplate,
 				DeleteOnFailure:            deleteOnFailure,
+				ForceEnvOnly:               forceEnvOnly,
 			}
 			// Original full assessment transfer logic
 			slog.InfoContext(targetVersionContext, "Transferring assessment data to target instance", "hostname", targetHostname, "db", targetDB)
@@ -120,8 +121,12 @@ var transferCmd = &cobra.Command{
 				slog.ErrorContext(ctx, "--target-assessment-name is required when using --source-campaign-name")
 				os.Exit(1)
 			}
+			// Force the env only for the campaigns as well
+			optionalParams := &vat.RestoreOptionalParams{
+				ForceEnvOnly: forceEnvOnly,
+			}
 			slog.InfoContext(targetVersionContext, "Transferring campaign to target assessment", "source-campaign", sourceCampaignName, "target-assessment", targetAssessmentName)
-			if err := vat.RestoreCampaign(targetVersionContext, targetClient, targetDB, assessmentData, sourceCampaignName, targetAssessmentName); err != nil {
+			if err := vat.RestoreCampaign(targetVersionContext, targetClient, targetDB, assessmentData, sourceCampaignName, targetAssessmentName, optionalParams); err != nil {
 				slog.ErrorContext(targetVersionContext, "Failed to transfer campaign to target instance", "error", err)
 				os.Exit(1)
 			}
@@ -146,6 +151,7 @@ func init() {
 	transferCmd.Flags().BoolVar(&overrideAssessmentTemplate, "override-template-assessment", false, "Ignore the template name in the serialized data and load template test cases anyway")
 	transferCmd.Flags().BoolVar(&deleteOnFailure, "delete-on-failure", false, "In the case of a failure, delete the created assessment from VECTR (does not delete template information). Does not affect single campaign inserts.")
 	transferCmd.Flags().StringVar(&sourceCampaignName, "source-campaign-name", "", "Name of a specific campaign to transfer. If set, --target-assessment-name must be an existing assessment.")
+	transferCmd.Flags().BoolVar(&forceEnvOnly, "force-env-only", false, "Ignore any templates associated with test cases, import them in the env only (DANGEROUS)")
 
 	// Mark flags as required
 	transferCmd.MarkFlagRequired("source-hostname")
