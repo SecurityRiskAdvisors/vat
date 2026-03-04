@@ -2,6 +2,48 @@
 
 This repository provides a CLI tool for saving, restoring, dumping, and transferring assessments, campaigns, and test cases from a VECTR instance. The tool interacts with the VECTR GraphQL API to manage assessment data.
 
+- [VECTR Assessment Transfer](#vectr-assessment-transfer)
+  - [How to Run](#how-to-run)
+    - [Downloading the Binary](#downloading-the-binary)
+    - [Generating VECTR Credentials](#generating-vectr-credentials)
+    - [Connecting to VECTR with TLS](#connecting-to-vectr-with-tls)
+      - [Using a Custom CA (`--ca-cert`)](#using-a-custom-ca---ca-cert)
+      - [Insecure Connections (`--insecure` or `-k`)](#insecure-connections---insecure-or--k)
+      - [Mutual TLS (mTLS)](#mutual-tls-mtls)
+    - [Save Assessment Data](#save-assessment-data)
+      - [Minimal Example](#minimal-example)
+      - [Required Options](#required-options)
+      - [Optional Options](#optional-options)
+    - [Restore Assessment Data](#restore-assessment-data)
+      - [Minimal Example](#minimal-example-1)
+      - [Required Options](#required-options-1)
+      - [Optional Options](#optional-options-1)
+    - [Dump Assessment Data](#dump-assessment-data)
+      - [Minimal Example](#minimal-example-2)
+      - [Required Options](#required-options-2)
+      - [Optional Options](#optional-options-2)
+      - [Filter File Format](#filter-file-format)
+    - [Transfer Assessment Data](#transfer-assessment-data)
+      - [Minimal Example](#minimal-example-3)
+      - [Required Options](#required-options-3)
+      - [Optional Options](#optional-options-3)
+    - [Restoring or Transferring a Single Campaign](#restoring-or-transferring-a-single-campaign)
+      - [Example using `restore`](#example-using-restore)
+    - [Force Environment Only Import](#force-environment-only-import)
+    - [Diagnostic Command](#diagnostic-command)
+      - [Minimal Example](#minimal-example-4)
+      - [Required Options](#required-options-4)
+      - [Optional Options](#optional-options-4)
+    - [Debug Mode](#debug-mode)
+  - [Working with Encrypted Assessment Files](#working-with-encrypted-assessment-files)
+    - [Extracting JSON from Encrypted Files](#extracting-json-from-encrypted-files)
+    - [Repackaging JSON into Encrypted Format](#repackaging-json-into-encrypted-format)
+  - [Development](#development)
+    - [Build the Application](#build-the-application)
+    - [Run Tests](#run-tests)
+  - [Project Structure](#project-structure)
+
+
 ## How to Run
 
 After building or downloading the binary, you can use the following commands to save, restore, dump, and transfer assessment data.
