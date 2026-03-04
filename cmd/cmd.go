@@ -21,6 +21,7 @@ var (
 	caCertFiles                []string
 	tlsParams                  *util.CustomTlsParams
 	sourceCampaignName         string
+	forceEnvOnly               bool
 )
 
 // RootCmd is the root command for the CLI

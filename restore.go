@@ -20,6 +20,7 @@ type RestoreOptionalParams struct {
 	AssessmentName             string // Set desired assessment name to this one, if blank, use existing assessment name
 	OverrideAssessmentTemplate bool   // Flag to override using the use of the existing template assessment. Directly import the tests instead (lower fidelty)
 	DeleteOnFailure            bool   // Flag to delete assessments if the campaign import failed
+	ForceEnvOnly               bool   // FLag to ignore template test cases even if one exists in the source
 }
 
 var ErrOrgNotFound = fmt.Errorf("could not find org(s)")
@@ -263,7 +264,18 @@ func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db
 //   - Returns an error if campaign creation fails via the GraphQL API.
 //   - Returns an error if a test case outcome status is not found in the mapping.
 //   - Returns an error if test case creation (with or without templates) fails.
-func restoreCampaigns(ctx context.Context, client graphql.Client, db string, assessmentId string, assessmentName string, campaignsToRestore []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign, orgMap map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, toolMap map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, idToolsMap map[string]GenericBlueTool) error {
+func restoreCampaigns(
+	ctx context.Context,
+	client graphql.Client,
+	db string,
+	assessmentId string,
+	assessmentName string,
+	campaignsToRestore []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign,
+	orgMap map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization,
+	toolMap map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool,
+	idToolsMap map[string]GenericBlueTool,
+	optionalParams *RestoreOptionalParams,
+) error {
 	// Step 5: Create the campaigns
 	campaigns := dao.CreateCampaignInput{
 		Db:           db,
@@ -415,7 +427,7 @@ func restoreCampaigns(ctx context.Context, client graphql.Client, db string, ass
 				})
 			}
 			// if there is no library test case id, then add with no template
-			if serialized_tc.LibraryTestCaseId == "" || serialized_tc.LibraryTestCaseId == "null" {
+			if optionalParams.ForceEnvOnly || (serialized_tc.LibraryTestCaseId == "" || serialized_tc.LibraryTestCaseId == "null") {
 				tc_no_template.TestCaseData = append(tc_no_template.TestCaseData, testCaseData)
 			} else {
 				// otherwise, create with template
@@ -630,76 +642,78 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	// Step 3: Check if there is a template name in the seralized data, if so check in the instance (error if not)
 	// If the user wants to ignore error, go ahead and import template test cases
 	// If no template name, then go ahead and add template test cases in
-	if optionalParams.OverrideAssessmentTemplate {
-		slog.DebugContext(ctx, "adding template test cases directly")
-		input := dao.CreateTestCaseTemplateInput{
-			Overwrite:            true,
-			TestCaseTemplateData: []dao.CreateTestCaseTemplateDataInput{},
-		}
+	if !optionalParams.ForceEnvOnly {
+		if optionalParams.OverrideAssessmentTemplate {
+			slog.DebugContext(ctx, "adding template test cases directly")
+			input := dao.CreateTestCaseTemplateInput{
+				Overwrite:            true,
+				TestCaseTemplateData: []dao.CreateTestCaseTemplateDataInput{},
+			}
 
-		if len(ad.LibraryTestCases) > 0 {
-			for _, template_test_case := range ad.LibraryTestCases {
-				slog.DebugContext(ctx, "library test case", "name", template_test_case.Name, "template_id", template_test_case.LibraryTestCaseId)
-				tctd, errors := createTemplateData(template_test_case)
-				if len(errors) > 0 {
-					for _, err := range errors {
-						slog.WarnContext(ctx, "parsing discrepencies found, they were recovered but review if needed",
-							"test-case-id", template_test_case.Id,
-							"test-case-library-id", template_test_case.LibraryTestCaseId,
-							"test-case-name", template_test_case.Name,
-							"assessment-name", ad.Assessment.Name,
-							"db", db,
-							"err", err,
-						)
+			if len(ad.LibraryTestCases) > 0 {
+				for _, template_test_case := range ad.LibraryTestCases {
+					slog.DebugContext(ctx, "library test case", "name", template_test_case.Name, "template_id", template_test_case.LibraryTestCaseId)
+					tctd, errors := createTemplateData(template_test_case)
+					if len(errors) > 0 {
+						for _, err := range errors {
+							slog.WarnContext(ctx, "parsing discrepencies found, they were recovered but review if needed",
+								"test-case-id", template_test_case.Id,
+								"test-case-library-id", template_test_case.LibraryTestCaseId,
+								"test-case-name", template_test_case.Name,
+								"assessment-name", ad.Assessment.Name,
+								"db", db,
+								"err", err,
+							)
 
+						}
+					}
+					input.TestCaseTemplateData = append(input.TestCaseTemplateData, tctd)
+				}
+
+				_, err := dao.CreateTemplateTestCases(ctx, client, input)
+				if err != nil {
+					if gqlObject, ok := gqlErrParse(err); ok {
+						slog.ErrorContext(ctx, "full gql error", "error", gqlObject)
+					}
+
+					return fmt.Errorf("could not write template test cases: %w", err)
+				}
+				slog.InfoContext(ctx, "inserted all library test cases", "total", len(input.TestCaseTemplateData))
+			} else {
+				slog.InfoContext(ctx, "No library test cases found", "assessment-name", ad.Assessment.Name)
+			}
+
+		} else {
+			if ad.TemplateAssessment != "" {
+				slog.DebugContext(ctx, "Validating template assessment in instance",
+					"template_assessment", ad.TemplateAssessment,
+					"override_template", optionalParams.OverrideAssessmentTemplate)
+				prefix := ""
+				for _, md := range ad.Assessment.Metadata {
+					if md.Key == "prefix" {
+						prefix = md.Value + " - "
+						break
 					}
 				}
-				input.TestCaseTemplateData = append(input.TestCaseTemplateData, tctd)
-			}
-
-			_, err := dao.CreateTemplateTestCases(ctx, client, input)
-			if err != nil {
-				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.ErrorContext(ctx, "full gql error", "error", gqlObject)
+				t, err := dao.FindLibraryAssessment(ctx, client, prefix+ad.TemplateAssessment)
+				if err != nil {
+					if gqlObject, ok := gqlErrParse(err); ok {
+						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+					}
+					return fmt.Errorf("could not fetch library assessment for %s: %w", ad.TemplateAssessment, err)
 				}
-
-				return fmt.Errorf("could not write template test cases: %w", err)
-			}
-			slog.InfoContext(ctx, "inserted all library test cases", "total", len(input.TestCaseTemplateData))
-		} else {
-			slog.InfoContext(ctx, "No library test cases found", "assessment-name", ad.Assessment.Name)
-		}
-
-	} else {
-		if ad.TemplateAssessment != "" {
-			slog.DebugContext(ctx, "Validating template assessment in instance",
-				"template_assessment", ad.TemplateAssessment,
-				"override_template", optionalParams.OverrideAssessmentTemplate)
-			prefix := ""
-			for _, md := range ad.Assessment.Metadata {
-				if md.Key == "prefix" {
-					prefix = md.Value + " - "
-					break
+				// if the defined library assessment does not exist, check to see if we have all library test cases
+				if len(t.LibraryAssessments.Nodes) == 0 {
+					slog.WarnContext(ctx, "Could not find library assessment, but checking all the test cases.", "template_assessment", ad.TemplateAssessment)
 				}
 			}
-			t, err := dao.FindLibraryAssessment(ctx, client, prefix+ad.TemplateAssessment)
-			if err != nil {
-				if gqlObject, ok := gqlErrParse(err); ok {
-					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
-				}
-				return fmt.Errorf("could not fetch library assessment for %s: %w", ad.TemplateAssessment, err)
+			// now let's check the actual data
+			ids := slices.Collect(maps.Keys(ad.LibraryTestCases))
+			if err := validateLibraryTestCases(ctx, client, ids, ad.TemplateAssessment); err != nil {
+				return err
 			}
-			// if the defined library assessment does not exist, check to see if we have all library test cases
-			if len(t.LibraryAssessments.Nodes) == 0 {
-				slog.WarnContext(ctx, "Could not find library assessment, but checking all the test cases.", "template_assessment", ad.TemplateAssessment)
-			}
-		}
-		// now let's check the actual data
-		ids := slices.Collect(maps.Keys(ad.LibraryTestCases))
-		if err := validateLibraryTestCases(ctx, client, ids, ad.TemplateAssessment); err != nil {
-			return err
-		}
 
+		}
 	}
 	// Step 4: Create the assessment
 	slog.InfoContext(ctx, "Creating assessment",
@@ -735,7 +749,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	}
 	//a.Assessment.Create.Assessments[0].Id
 
-	err = restoreCampaigns(ctx, client, db, a.Assessment.Create.Assessments[0].Id, ad.Assessment.Name, ad.Assessment.Campaigns, org_map, tool_map, ad.IdToolsMap)
+	err = restoreCampaigns(ctx, client, db, a.Assessment.Create.Assessments[0].Id, ad.Assessment.Name, ad.Assessment.Campaigns, org_map, tool_map, ad.IdToolsMap, optionalParams)
 	if err != nil {
 		if optionalParams.DeleteOnFailure {
 			slog.ErrorContext(ctx, "deleting assessment since a failure occured", "assessment-name", ad.Assessment.Name, "db", db)
@@ -784,7 +798,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 //   - Returns an error if library test cases, organizations, or tools are
 //     missing in the target instance.
 //   - Returns any error propagated from `restoreCampaigns`.
-func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, sourceCampaignName, targetAssessmentName string) error {
+func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, sourceCampaignName, targetAssessmentName string, optionalParams *RestoreOptionalParams) error {
 	slog.InfoContext(ctx, "Starting RestoreCampaign", "db", db, "source_campaign", sourceCampaignName, "target_assessment", targetAssessmentName)
 
 	var campaignToRestore dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign
@@ -817,8 +831,10 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 		}
 	}
 
-	if err := validateLibraryTestCases(ctx, client, libraryTestCaseIDs, ad.TemplateAssessment); err != nil {
-		return err
+	if !optionalParams.ForceEnvOnly {
+		if err := validateLibraryTestCases(ctx, client, libraryTestCaseIDs, ad.TemplateAssessment); err != nil {
+			return err
+		}
 	}
 
 	// Collect organizations for the specific campaign
@@ -853,7 +869,7 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 		return err
 	}
 
-	return restoreCampaigns(ctx, client, db, targetAssessmentId, targetAssessmentName, []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign{campaignToRestore}, org_map, tool_map, ad.IdToolsMap)
+	return restoreCampaigns(ctx, client, db, targetAssessmentId, targetAssessmentName, []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign{campaignToRestore}, org_map, tool_map, ad.IdToolsMap, optionalParams)
 }
 
 func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair, vatMetadata *VatMetadata) []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair {

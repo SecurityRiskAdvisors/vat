@@ -81,6 +81,7 @@ Restore assessment data to a VECTR instance from an encrypted, compressed file:
 - `--source-campaign-name`: Name of a specific campaign to restore from the input file. If set, `--target-assessment-name` must be an existing assessment.
 - `--override-template-assessment`: Overrides any set template name in the serialized data and loads template test cases anyway.
 - `--delete-on-failure`: In the case of a failure, delete the created assessment from VECTR. (Note: this does not affect single campaign transfers)
+- `--force-env-only`: Ignore any templates associated with test cases and import them as environment-only test cases. This breaks the link to the library template. (DANGEROUS)
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
 - `--client-cert-file`: Path to the client certificate file for mTLS.
 - `--client-key-file`: Path to the client key file for mTLS.
@@ -145,6 +146,7 @@ Transfer an assessment from one VECTR instance directly to another:
 - `--target-assessment-name`: Overrides the name of the assessment in the target instance.
 - `--override-template-assessment`: Overrides the template assessment set in the serialized data and uses the saved template data (lower fidelity).
 - `--delete-on-failure`: In the case of a failure, delete the created assessment from VECTR. (Note: this does not affect single campaign transfers)
+- `--force-env-only`: Ignore any templates associated with test cases and import them as environment-only test cases. This breaks the link to the library template. (DANGEROUS)
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors). (will be applied for both source and dest)
 - `--client-cert-file`: Path to the client certificate file for mTLS. (will be applied for both source and dest)
 - `--client-key-file`: Path to the client key file for mTLS. (will be applied for both source and dest)
@@ -166,6 +168,18 @@ First, save a full assessment that contains the campaign you want to move. Then,
 ```
 
 A similar approach works for the `transfer` command.
+
+### Force Environment Only Import
+
+The `--force-env-only` flag is an advanced option available for both `restore` and `transfer` commands. By default, `vat` attempts to preserve the link between test cases in an assessment and their corresponding templates in the VECTR library. This ensures that the restored assessment maintains its relationship with the library content.
+
+When `--force-env-only` is used, `vat` intentionally ignores these template associations. All test cases are imported as "environment-only" test cases, meaning they exist solely within the assessment and have no link to the library.
+
+**Use cases:**
+- You want to create a snapshot of an assessment that is completely decoupled from the library.
+- The source assessment uses library templates that do not exist and cannot be created in the target instance.
+
+**Warning:** This is a destructive action regarding metadata. Once imported with this flag, the test cases cannot easily be re-linked to library templates.
 
 ### Diagnostic Command
 
