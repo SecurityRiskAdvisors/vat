@@ -78,6 +78,12 @@ get-tools: clean-deps
 	@go mod tidy
 	@echo "Dev tools fetched."
 	
+# Check for available dependency updates without applying them
+.PHONY: check-updates
+check-updates:
+	@echo "Checking for dependency updates..."
+	@go list -u -m -f '{{if .Update}}{{.Path}} {{.Version}} -> {{.Update.Version}}{{end}}' all
+
 # Use this to update deps and get dev requirements
 .PHONY: update-deps
 update-deps: clean-deps get-tools
