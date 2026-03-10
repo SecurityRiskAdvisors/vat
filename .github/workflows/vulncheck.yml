@@ -1,0 +1,17 @@
+name: Weekly Vulnerability Check
+
+on:
+  schedule:
+    - cron: '0 8 * * 1' # Every Monday at 8am UTC
+  workflow_dispatch:
+
+jobs:
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: Run vulncheck
+        run: make vulncheck
