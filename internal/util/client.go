@@ -51,10 +51,12 @@ type VectrRestApiCaller struct {
 
 var ErrInvalidAuth = errors.New("credentials invalid")
 
-// Get retrieves the current version of the VECTR application.
+// GetVersion retrieves the current version of the VECTR application.
 //
 // This function performs an HTTP GET request to the version check endpoint.
-// It handles authentication and parses the response to extract the current version.
+// Authentication is handled transparently by the underlying HTTP transport.
+// vat also uses this function to validate that the provided credentials are accurate,
+// since an invalid API key will result in an ErrInvalidAuth error.
 //
 // Parameters:
 //   - ctx: Context for managing request deadlines, cancellations, and other request-scoped values.
@@ -89,6 +91,21 @@ func (v *VectrRestApiCaller) GetVersion(ctx context.Context) (string, error) {
 	return parsedResponse.Data.CurrentVersion, nil
 }
 
+// GetIsv retrieves an ISV (Integrated Security Value) export from the VECTR application.
+//
+// This function performs an HTTP GET request to the ISV export endpoint for the given ISV identifier.
+//
+// Parameters:
+//   - ctx: Context for managing request deadlines, cancellations, and other request-scoped values.
+//   - isv: The ISV identifier to export.
+//
+// Returns:
+//   - A byte slice containing the raw ISV export body.
+//   - An error if the request or response reading fails.
+//
+// Errors:
+//   - Returns `ErrInvalidAuth` if the response status is unauthorized.
+//   - Returns an error if the request cannot be completed or the response body cannot be read.
 func (v *VectrRestApiCaller) GetIsv(ctx context.Context, isv string) ([]byte, error) {
 	path := v.isvExportPath.JoinPath(isv)
 

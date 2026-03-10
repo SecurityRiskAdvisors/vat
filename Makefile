@@ -19,10 +19,8 @@
 	@echo "Release process completed successfully."
  
 # release-branch tags an input of a tag, it creates a release branch and tags it
-# run update-deps before release checks to make sure that there are no module updates
-# that are needed. If so, the release checks will block the release branch creation
  .PHONY: release-branch
- release-branch: clean update-deps generate serializedschemavalidator vulncheck test release-checks
+ release-branch: clean generate serializedschemavalidator vulncheck test release-checks
 	@if [ -z "$(TAG)" ]; then \
 		echo "Error: TAG parameter is required. Usage: make tag TAG=<tag_name>"; \
 		git describe --tags --always --dirty; \
@@ -73,9 +71,7 @@ clean-deps:
 .PHONY: get-tools
 get-tools: clean-deps
 	@echo "Getting dev tools..."
-	@go get -tool github.com/Khan/genqlient
-	@go get -tool golang.org/x/vuln/cmd/govulncheck@latest
-	@go mod tidy
+	@cd tools && go mod download
 	@echo "Dev tools fetched."
 	
 # Check for available dependency updates without applying them
@@ -84,14 +80,23 @@ check-updates:
 	@echo "Checking for dependency updates..."
 	@go list -u -m -f '{{if .Update}}{{.Path}} {{.Version}} -> {{.Update.Version}}{{end}}' all
 
-# Use this to update deps and get dev requirements
-.PHONY: update-deps
-update-deps: clean-deps get-tools
-	@echo "Pulling dependencies..."
-	@go get -u -t .
+.PHONY: update-prod-deps
+update-prod-deps: clean-deps
+	@echo "Updating production dependencies..."
+	@go get -u -t ./...
 	@go mod tidy
 	@go mod download
-	@echo "Dependencies pulled."
+	@echo "Production dependencies updated."
+
+.PHONY: update-dev-deps
+update-dev-deps: clean-deps get-tools
+	@echo "Updating dev tool dependencies..."
+	@cd tools && go get -u -tags tools ./... && go mod tidy
+	@echo "Dev tool dependencies updated."
+
+.PHONY: update-deps
+update-deps: update-prod-deps update-dev-deps
+	@echo "All dependencies updated."
 
 
 # Pull dependencies
@@ -105,7 +110,7 @@ update-deps: clean-deps get-tools
 generate:
 	@echo "Generating backend-code..."
 	@mkdir -p internal/dao
-	@go run github.com/Khan/genqlient
+	@go run -modfile=tools/go.mod github.com/Khan/genqlient
 	@echo "Completed code generation."
 
  # Build the application for the current system
@@ -149,7 +154,7 @@ build-multiarch:
 .PHONY: vulncheck
 vulncheck:
 	@echo "Running vulncheck..."
-	@go run golang.org/x/vuln/cmd/govulncheck ./...
+	@go run -modfile=tools/go.mod golang.org/x/vuln/cmd/govulncheck ./...
 	@echo "No vulns found."
 	
 .PHONY: serializedschemavalidator
