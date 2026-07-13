@@ -2,7 +2,7 @@ module sra/vat/tools
 
 go 1.25.5
 
-toolchain go1.26.4
+toolchain go1.26.5
 
 require (
 	github.com/Khan/genqlient v0.8.1
