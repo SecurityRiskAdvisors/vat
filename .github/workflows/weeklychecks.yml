@@ -14,6 +14,6 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: Run vulncheck
-        run: make vulncheck
+        run: make get-tools generate vulncheck
       - name: Check for updates
         run: make check-updates
