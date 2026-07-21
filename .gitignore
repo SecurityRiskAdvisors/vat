@@ -6,3 +6,4 @@ dist/
 _testcode/
 mtls-test-*
 .cecli/
+_scratch/

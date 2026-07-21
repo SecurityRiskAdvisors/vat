@@ -163,6 +163,35 @@ serializedschemavalidator:
 	@go run _buildcode/objectvalidate/main.go > serializedschemahash.txt
 	@echo "Completed, checked the file diff in git to validate no changes."
 
+.PHONY: schema-diff
+schema-diff:
+	@echo "Diffing schema changes against types used in operations..."
+	@mkdir -p _scratch
+	@git show origin/master:graphql/schema/schema.gql > _scratch/old_schema.gql
+	@TYPES_JSON=$$(go run ./_buildcode/schemavalidate/main.go --format json); \
+	TYPES=$$(echo "$$TYPES_JSON" | jq -r '(.input + .output) | keys[]' | paste -sd'|'); \
+	CHANGES=$$(docker run --rm -v $$PWD:/app kamilkisiela/graphql-inspector:v3.4.0 \
+		graphql-inspector diff _scratch/old_schema.gql graphql/schema/schema.gql \
+		| grep -P "\b($$TYPES)\b"); \
+	if [ -z "$$CHANGES" ]; then \
+		echo "No schema changes affect your operations."; \
+	else \
+		echo "$$TYPES_JSON" | jq -r '(.input + .output) | keys[]' | while read TYPE; do \
+			TYPE_CHANGES=$$(echo "$$CHANGES" | grep -P "\b$$TYPE\b"); \
+			[ -z "$$TYPE_CHANGES" ] && continue; \
+			OPS=$$(echo "$$TYPES_JSON" | jq -r "(.input[\"$$TYPE\"] // .output[\"$$TYPE\"]).used_in | join(\", \")"); \
+			echo "### $$TYPE (used in: $$OPS)"; \
+			echo "$$TYPE_CHANGES"; \
+			echo ""; \
+		done; \
+	fi
+
+.PHONY: schema-snapshot
+schema-snapshot:
+	@echo "Generating schema type snapshot..."
+	@go run ./_buildcode/schemavalidate/main.go --snapshot | tee schematypes.txt
+	@echo "Completed. Check git diff schematypes.txt to review changes."
+
 .PHONY: create-draft-release
 create-draft-release:
 	@echo "Creating draft release on GitHub..."
