@@ -602,23 +602,21 @@ func validateLibraryTestCases(ctx context.Context, client graphql.Client, librar
 func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, optionalParams *RestoreOptionalParams) error {
 	slog.InfoContext(ctx, "Starting RestoreAssessment", "db", db, "assessment_name", ad.Assessment.Name)
 
-	if ad.Metadata != nil {
-		ad.Metadata.LoadData = NewVatOpMetadata(ctx)
-	} else {
-		ad.Metadata = &VatMetadata{
-			LoadData: NewVatOpMetadata(ctx),
-		}
+	// restoreInfo is an artifact of this single restore call — it's never
+	// stored on AssessmentData (see its doc comment), just used here for
+	// the version-mismatch warnings and folded into the target VECTR
+	// instance's own metadata below.
+	restoreInfo := NewVatOpMetadata(ctx)
+
+	if restoreInfo.VectrVersion != TAGGED_VECTR_VERSION {
+		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", restoreInfo.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION)
 	}
 
-	if ad.Metadata.LoadData.VectrVersion != TAGGED_VECTR_VERSION {
-		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", ad.Metadata.LoadData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION)
+	if ad.Manifest.VectrVersion != "" && ad.Manifest.VectrVersion != restoreInfo.VectrVersion {
+		slog.WarnContext(ctx, "Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Manifest.VectrVersion, "live-vectr-version", restoreInfo.VectrVersion)
 	}
 
-	if ad.Metadata.SaveData != nil && ad.Metadata.SaveData.VectrVersion != ad.Metadata.LoadData.VectrVersion {
-		slog.WarnContext(ctx, "Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Metadata.SaveData.VectrVersion, "live-vectr-version", ad.Metadata.LoadData.VectrVersion)
-	}
-
-	org_map, tool_map, err := validateRestorePrerequisites(ctx, client, db, ad.Organizations, ad.ToolsMap, ad.OptionalFields.OrgMap)
+	org_map, tool_map, err := validateRestorePrerequisites(ctx, client, db, slices.Collect(maps.Keys(ad.OrgMap)), ad.ToolsMap, ad.OrgMap)
 	if err != nil {
 		return err
 	}
@@ -735,7 +733,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	for _, o := range ad.Assessment.Organizations {
 		assessment.AssessmentData[0].OrganizationIds = append(assessment.AssessmentData[0].OrganizationIds, org_map[o.Name].Id)
 	}
-	ad.Assessment.Metadata = loadVatMetadata(ad.Assessment.Metadata, ad.Metadata)
+	ad.Assessment.Metadata = loadVatMetadata(ad.Assessment.Metadata, ad.Manifest, restoreInfo)
 	for _, md := range ad.Assessment.Metadata {
 		assessment.AssessmentData[0].Metadata = append(assessment.AssessmentData[0].Metadata, dao.MetadataKeyValuePairInput(md))
 	}
@@ -856,9 +854,9 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 
 	// Create a temporary optionalOrgMap for the specific campaign's organizations
 	campaignOptionalOrgMap := make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization)
-	if ad.OptionalFields.OrgMap != nil {
+	if ad.OrgMap != nil {
 		for _, orgName := range campaignOrgNames {
-			if orgDetail, ok := ad.OptionalFields.OrgMap[orgName]; ok {
+			if orgDetail, ok := ad.OrgMap[orgName]; ok {
 				campaignOptionalOrgMap[orgName] = orgDetail
 			}
 		}
@@ -872,8 +870,8 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 	return restoreCampaigns(ctx, client, db, targetAssessmentId, targetAssessmentName, []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign{campaignToRestore}, org_map, tool_map, ad.IdToolsMap, optionalParams)
 }
 
-func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair, vatMetadata *VatMetadata) []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair {
-	for k, v := range vatMetadata.Serialize() {
+func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair, manifest Manifest, restoreInfo VatOpMetadata) []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair {
+	for k, v := range AsVectrMetadataPairs(manifest, restoreInfo) {
 		md = append(md, dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair{
 			Key:   k,
 			Value: v,

@@ -42,22 +42,16 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		"db", db,
 		"assessment_name", assessment_name)
 	data := &AssessmentData{
-		ToolsMap:   map[string]GenericBlueTool{},
-		IdToolsMap: map[string]GenericBlueTool{},
-		OptionalFields: struct {
-			OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
-			BundleID     string
-			BundlePrefix string
-		}{
-			OrgMap: make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
+		AssessmentResource: AssessmentResource{
+			ToolsMap:   map[string]GenericBlueTool{},
+			IdToolsMap: map[string]GenericBlueTool{},
+			OrgMap:     make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 		},
-		Metadata: &VatMetadata{
-			SaveData: NewVatOpMetadata(ctx),
-		},
+		Manifest: NewManifestMetadata(ctx),
 	}
 
-	if data.Metadata.SaveData.VectrVersion != TAGGED_VECTR_VERSION {
-		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "saved-data-version", data.Metadata.SaveData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION, "vat-version", data.Metadata.SaveData.Version)
+	if data.Manifest.VectrVersion != TAGGED_VECTR_VERSION {
+		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "saved-data-version", data.Manifest.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION, "vat-version", data.Manifest.VatVersion)
 	}
 
 	assessment, err := dao.GetAllAssessments(ctx, client, db, assessment_name)
@@ -111,7 +105,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 	data.Assessment = assessment
 
 	for _, org := range data.Assessment.Organizations {
-		data.OptionalFields.OrgMap[org.Name] = org
+		data.OrgMap[org.Name] = org
 	}
 
 	// check if there is a library assessment (bundle) to use
@@ -125,7 +119,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 			completionProgress["bundle"] = true
 		}
 		if metadata.Key == "prefix" {
-			data.OptionalFields.BundlePrefix = metadata.Value
+			data.BundlePrefix = metadata.Value
 			completionProgress["prefix"] = true
 		}
 		// this isn't the cleanest version, but if I have more keys I can do it that way
@@ -136,8 +130,8 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 	// if we could find a template assessment, then let's get the ID for it as well
 	if data.TemplateAssessment != "" {
 		var bundle_name string = data.TemplateAssessment
-		if data.OptionalFields.BundlePrefix != "" {
-			bundle_name = fmt.Sprintf("%s - %s", data.OptionalFields.BundlePrefix, data.TemplateAssessment)
+		if data.BundlePrefix != "" {
+			bundle_name = fmt.Sprintf("%s - %s", data.BundlePrefix, data.TemplateAssessment)
 		}
 		bundleIdResponse, err := dao.GetBundleByName(ctx, client, bundle_name)
 		if err != nil {
@@ -147,7 +141,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 			return nil, fmt.Errorf("could not connect to get the bundle id for %s. Env: %s: %w", data.TemplateAssessment, db, err)
 		}
 		if len(bundleIdResponse.LibraryAssessments.Nodes) > 0 {
-			data.OptionalFields.BundleID = bundleIdResponse.LibraryAssessments.Nodes[0].Id //there can only be one field due to the graphql query
+			data.BundleID = bundleIdResponse.LibraryAssessments.Nodes[0].Id //there can only be one field due to the graphql query
 		}
 	}
 
@@ -155,7 +149,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 
 	for _, c := range data.Assessment.Campaigns {
 		for _, o := range c.Organizations {
-			data.OptionalFields.OrgMap[o.Name] = dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization(o)
+			data.OrgMap[o.Name] = dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization(o)
 		}
 		for _, tc := range c.TestCases {
 			if tc.LibraryTestCaseId != "" && tc.LibraryTestCaseId != "null" {
@@ -226,9 +220,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 		}
 	}
 
-	// get a unique list of the orgs
-	data.Organizations = slices.Collect(maps.Keys(data.OptionalFields.OrgMap))
-	slog.InfoContext(ctx, "Finished dumping assessment", "date", data.Metadata.SaveData.Date, "vat-version", data.Metadata.SaveData.Version, "assessment-name", data.Assessment.Name, "db", db)
+	slog.InfoContext(ctx, "Finished dumping assessment", "date", data.Manifest.Created, "vat-version", data.Manifest.VatVersion, "assessment-name", data.Assessment.Name, "db", db)
 
 	return data, nil
 

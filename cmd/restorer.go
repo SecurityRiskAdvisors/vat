@@ -3,7 +3,7 @@ package main
 import (
 	"compress/gzip"
 	"context"
-	"encoding/json"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -86,11 +86,17 @@ var restoreCmd = &cobra.Command{
 		defer gzipReader.Close()
 
 		// Read and deserialize the JSON data
-		var assessmentData vat.AssessmentData
-		if err := json.NewDecoder(gzipReader).Decode(&assessmentData); err != nil {
+		decompressed, err := io.ReadAll(gzipReader)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to read decompressed data", "error", err)
+			os.Exit(1)
+		}
+		assessmentDataPtr, err := vat.DecodeJson(decompressed)
+		if err != nil {
 			slog.ErrorContext(ctx, "Failed to decode JSON data", "error", err)
 			os.Exit(1)
 		}
+		assessmentData := *assessmentDataPtr
 
 		// Set up the VECTR client
 		client, vectrVersionHandler, err := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), tlsParams)

@@ -2,8 +2,8 @@ package main
 
 import (
 	"compress/gzip"
-	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -54,14 +54,19 @@ var diagCmd = &cobra.Command{
 		defer gzipReader.Close()
 
 		// Read and deserialize the JSON data
-		var assessmentData vat.AssessmentData
-		if err := json.NewDecoder(gzipReader).Decode(&assessmentData); err != nil {
+		decompressed, err := io.ReadAll(gzipReader)
+		if err != nil {
+			slog.Error("Failed to read decompressed data", "error", err)
+			os.Exit(1)
+		}
+		assessmentData, err := vat.DecodeJson(decompressed)
+		if err != nil {
 			slog.Error("Failed to decode JSON data", "error", err)
 			os.Exit(1)
 		}
 
 		// Extract metadata using the function from vat package
-		metadataOutput := vat.ExtractMetadata(&assessmentData)
+		metadataOutput := vat.ExtractMetadata(assessmentData)
 
 		// Print the metadata
 		fmt.Println(string(metadataOutput))

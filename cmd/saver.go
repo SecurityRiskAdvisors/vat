@@ -123,12 +123,12 @@ var saveCmd = &cobra.Command{
 			log.Fatalf("Failed to write compressed data: %v", err)
 		}
 
-		if !(disableBundle || data.OptionalFields.BundleID == "") {
-			isv, err := vectrRestApiCaller.GetIsv(ctx, data.OptionalFields.BundleID)
+		if !(disableBundle || data.BundleID == "") {
+			isv, err := vectrRestApiCaller.GetIsv(ctx, data.BundleID)
 			if err != nil {
 				slog.ErrorContext(ctx, "could not save isv, you will have to do it manually", "test-plan-name", data.TemplateAssessment, "hostname", hostname, "db", db, "assessment-name", assessmentName)
 			} else {
-				isvPath := fmt.Sprintf("%s.%s.isv", outputFile, data.OptionalFields.BundleID)
+				isvPath := fmt.Sprintf("%s.%s.isv", outputFile, data.BundleID)
 				err := os.WriteFile(isvPath, isv, 0666)
 				if err != nil {
 					slog.ErrorContext(ctx, "could not write isv file, you'll have to clean up and do it manually",

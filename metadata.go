@@ -5,95 +5,86 @@ import (
 	"time"
 )
 
-type VatOpMetadata struct {
-	Version      string
-	Date         time.Time
-	VectrVersion string
-}
-
-type VatMetadata struct {
-	SaveData *VatOpMetadata
-	LoadData *VatOpMetadata
-}
-
-/*
-serialize converts VatOpMetadata into a map of strings.
-
-This method includes version, date, and VECTR version.
-It formats the date using the RFC3339 standard.
-
-Returns:
-  - A map of strings representing serialized operation metadata.
-*/
-func (v *VatOpMetadata) serialize() map[string]string {
-	r := make(map[string]string, 2)
-	r["version"] = v.Version
-	if v.Date.IsZero() {
-		r["date"] = ""
-	} else {
-		r["date"] = v.Date.Format(time.RFC3339)
-	}
-	r["vectr-version"] = v.VectrVersion
-	for k, _ := range r {
-		if r[k] == "" {
-			r[k] = "none_found"
-		}
-	}
-	return r
-}
-
-/*
-Serialize converts VatMetadata into a map of strings.
-
-This method includes save and load operation metadata.
-It prefixes keys with "vat-save-" or "vat-load-" based on the operation type.
-
-Returns:
-  - A map of strings representing serialized metadata.
-*/
-func (v *VatMetadata) Serialize() map[string]string {
-	r := make(map[string]string, 4)
-	if v.SaveData != nil {
-		for k, v := range v.SaveData.serialize() {
-			r["vat-save-"+k] = v
-		}
-	}
-	if v.LoadData != nil {
-		for k, v := range v.LoadData.serialize() {
-			r["vat-load-"+k] = v
-		}
-	}
-	return r
-}
-
-/*
-NewVatOpMetadata creates a new VatOpMetadata instance using context values.
-
-This function extracts the version and VECTR version from the provided context.
-If these values are not present, it defaults to "none_found".
-The current date is set using the time of creation.
-
-Parameters:
-  - ctx: Context for managing request lifetimes and cancellations.
-
-Returns:
-  - A pointer to a VatOpMetadata struct containing:
-  - Version: The version extracted from the context.
-  - Date: The current date and time.
-  - VectrVersion: The VECTR version extracted from the context.
-*/
-func NewVatOpMetadata(ctx context.Context) *VatOpMetadata {
-	var version string = "none_found"
-	var vectrVersion string = "none_found"
+// versionsFromContext extracts the vat/VECTR versions stamped on ctx (see
+// const.go's VERSION/VECTR_VERSION keys), defaulting to "none_found" if
+// either is absent.
+func versionsFromContext(ctx context.Context) (version, vectrVersion string) {
+	version = "none_found"
+	vectrVersion = "none_found"
 	if ctx.Value(VERSION) != nil {
 		version = string(ctx.Value(VERSION).(VatContextValue))
 	}
 	if ctx.Value(VECTR_VERSION) != nil {
 		vectrVersion = string(ctx.Value(VECTR_VERSION).(VatContextValue))
 	}
-	return &VatOpMetadata{
+	return version, vectrVersion
+}
+
+// orDefault returns s, or def if s is empty.
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
+}
+
+// VatOpMetadata captures provenance for a single restore operation: what vat
+// version is running, when, and against what VECTR version. It's an
+// artifact of a single RestoreAssessment/RestoreCampaign call — computed as
+// a local variable there (not stored on AssessmentData, see its doc
+// comment) and never part of the wire file. Save-time provenance lives
+// directly in Manifest (format.go) instead, since that's the file's own
+// record of who saved it, not a separate shadow copy of it.
+type VatOpMetadata struct {
+	Version      string
+	Date         time.Time
+	VectrVersion string
+}
+
+// NewVatOpMetadata builds a VatOpMetadata stamped with the current time and
+// the vat/VECTR versions carried on ctx.
+func NewVatOpMetadata(ctx context.Context) VatOpMetadata {
+	version, vectrVersion := versionsFromContext(ctx)
+	return VatOpMetadata{
 		Version:      version,
 		Date:         time.Now(),
 		VectrVersion: vectrVersion,
 	}
+}
+
+// asMap renders v as the unprefixed {version, date, vectr-version} shape
+// used for display (see diag.go).
+func (v VatOpMetadata) asMap() map[string]string {
+	date := ""
+	if !v.Date.IsZero() {
+		date = v.Date.Format(time.RFC3339)
+	}
+	return map[string]string{
+		"version":       orDefault(v.Version, "none_found"),
+		"date":          orDefault(date, "none_found"),
+		"vectr-version": orDefault(v.VectrVersion, "none_found"),
+	}
+}
+
+// asPrefixedMap renders v's fields prefixed (e.g. "vat-load-version"), for
+// writing into VECTR's own generic metadata key/value pairs.
+func (v VatOpMetadata) asPrefixedMap(prefix string) map[string]string {
+	r := make(map[string]string, 3)
+	for k, val := range v.asMap() {
+		r[prefix+"-"+k] = val
+	}
+	return r
+}
+
+// AsVectrMetadataPairs flattens save-time provenance (manifest) and
+// load-time provenance (restoreInfo) into VECTR's generic metadata
+// key/value pairs, prefixed "vat-save-*" / "vat-load-*" respectively. This
+// is restore-time bookkeeping written into the target VECTR instance for
+// audit purposes — it has nothing to do with vat's own wire format.
+func AsVectrMetadataPairs(manifest Manifest, restoreInfo VatOpMetadata) map[string]string {
+	r := manifest.asPrefixedMap("vat-save")
+	for k, v := range restoreInfo.asPrefixedMap("vat-load") {
+		r[k] = v
+	}
+	return r
 }

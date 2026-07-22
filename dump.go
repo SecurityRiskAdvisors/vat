@@ -78,18 +78,12 @@ func DumpInstance(ctx context.Context, client graphql.Client, filter *util.Filte
 						AssessmentName: assessment.Name,
 					}
 					data := &AssessmentData{
-						ToolsMap:   map[string]GenericBlueTool{},
-						IdToolsMap: map[string]GenericBlueTool{},
-						OptionalFields: struct {
-							OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
-							BundleID     string
-							BundlePrefix string
-						}{
-							OrgMap: make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
+						AssessmentResource: AssessmentResource{
+							ToolsMap:   map[string]GenericBlueTool{},
+							IdToolsMap: map[string]GenericBlueTool{},
+							OrgMap:     make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 						},
-						Metadata: &VatMetadata{
-							SaveData: NewVatOpMetadata(ctx),
-						},
+						Manifest: NewManifestMetadata(ctx),
 					}
 					ad, err := saveAssessment(ctx, client, assessment, data, db.Name)
 					if err != nil {

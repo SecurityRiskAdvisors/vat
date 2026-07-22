@@ -3,7 +3,6 @@ package vat
 import (
 	_ "embed"
 	"encoding/json"
-	"sra/vat/internal/dao"
 
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -26,70 +25,27 @@ type GenericBlueTool struct {
 	ProductName string
 }
 
-// AssessmentData represents the data structure for an assessment within the VECTR application.
+// AssessmentData is the in-memory model for a single assessment restore/save
+// operation. It composes the individually-versioned resources (see
+// format.go) with the file's own manifest.
 //
-// Fields:
-//   - Assessment: Contains detailed information about the assessment.
-//   - LibraryTestCases: Maps test case IDs to their corresponding library test case details.
-//   - TemplateAssessment: Stores the name of the template assessment used.
-//   - Organizations: Lists the organizations associated with the assessment.
-//   - ToolsMap: Maps tool names to their corresponding `GenericBlueTool` details.
-//   - IdToolsMap: Maps tool IDs to their corresponding `GenericBlueTool` details.
-//   - Metadata: Holds metadata related to the assessment operations.
-//   - OptionalFields: Contains additional fields that are not required for restoration, allowing for backward-compatible updates.
+// AssessmentResource is embedded so existing code can keep referencing
+// ad.Assessment, ad.ToolsMap, ad.IdToolsMap, ad.TemplateAssessment,
+// ad.OrgMap, ad.BundleID, ad.BundlePrefix directly via Go's field promotion.
+//
+// There is deliberately no restore-time field here (e.g. "RestoreInfo"):
+// that information (which vat/VECTR version is doing the current restore) is
+// an artifact of a single RestoreAssessment call, not a property of the data
+// being restored — nothing ever re-serializes AssessmentData after a
+// restore, so it lives as a local variable in restore.go instead of a
+// stored field (see VatOpMetadata's doc comment in metadata.go).
 type AssessmentData struct {
-	Assessment         dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment
-	LibraryTestCases   map[string]dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase
-	TemplateAssessment string
-	Organizations      []string
-	ToolsMap           map[string]GenericBlueTool
-	IdToolsMap         map[string]GenericBlueTool
-	Metadata           *VatMetadata
-	OptionalFields     struct { // these fields will never be required on the restore side, so can be added to without changing the major version of the application
-		OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
-		BundleID     string
-		BundlePrefix string
-	}
-}
-
-// EncodeToJson is a convienience function converts an `AssessmentData` struct into a JSON-encoded byte slice.
-//
-// Parameters:
-//   - data: A pointer to an `AssessmentData` struct containing the data to be serialized.
-//
-// Returns:
-//   - A byte slice containing the JSON-encoded representation of the `AssessmentData`.
-//   - An error if the JSON encoding process fails.
-//
-// Errors:
-//   - Returns an error if the `json.MarshalIndent` function fails to serialize the data.
-func EncodeToJson(data *AssessmentData) ([]byte, error) {
-	jsonData, err := json.MarshalIndent(data, "", "\t")
-	if err != nil {
-		return nil, err
-	}
-	return jsonData, nil
-}
-
-// DecodeJson is a function that deserializes a JSON-encoded byte slice into an `AssessmentData` struct.
-//
-// Parameters:
-//   - data: A byte slice containing the JSON-encoded representation of the `AssessmentData`.
-//
-// Returns:
-//   - A pointer to an `AssessmentData` struct populated with the deserialized data.
-//   - An error if the JSON decoding process fails.
-//
-// Errors:
-//   - Returns an error if the `json.Unmarshal` function fails to deserialize the data.
-func DecodeJson(data []byte) (*AssessmentData, error) {
-	a := AssessmentData{}
-
-	err := json.Unmarshal(data, &a)
-	if err != nil {
-		return nil, err
-	}
-	return &a, nil
+	AssessmentResource
+	LibraryTestCases LibraryTestCasesResource
+	// Manifest is save-time provenance and part of the wire file itself —
+	// see Manifest's doc comment. Stamped via NewManifestMetadata at save
+	// time; handed back as-is by DecodeJson.
+	Manifest Manifest
 }
 
 // gqlErrParse attempts to parse a GraphQL error into a JSON-compatible object.

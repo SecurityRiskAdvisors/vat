@@ -183,20 +183,20 @@ var dumpCmd = &cobra.Command{
 			}
 
 			var isvPath string
-			if entry.Ad.OptionalFields.BundleID != "" {
+			if entry.Ad.BundleID != "" {
 				// check the cache for the isv, populate it if it's not there
-				if _, ok := isvCache[entry.Ad.OptionalFields.BundleID]; !ok {
-					isv, err := vectrVersionHandler.GetIsv(ctx, entry.Ad.OptionalFields.BundleID)
+				if _, ok := isvCache[entry.Ad.BundleID]; !ok {
+					isv, err := vectrVersionHandler.GetIsv(ctx, entry.Ad.BundleID)
 					if err != nil {
 						slog.ErrorContext(ctx, "could not save isv, you will have to do it manually", "test-plan-name", entry.Ad.TemplateAssessment, "hostname", hostname, "db", entry.Db, "assessment-name", entry.AssessmentName)
 					} else {
-						isvCache[entry.Ad.OptionalFields.BundleID] = make([]byte, len(isv))
-						copy(isvCache[entry.Ad.OptionalFields.BundleID], isv) // cache the isv data
+						isvCache[entry.Ad.BundleID] = make([]byte, len(isv))
+						copy(isvCache[entry.Ad.BundleID], isv) // cache the isv data
 					}
 				}
 				// if you can find it, then go ahead and write the file
-				if isv, ok := isvCache[entry.Ad.OptionalFields.BundleID]; ok {
-					isvPath = fmt.Sprintf("%s.%s.isv", outputFilePath, entry.Ad.OptionalFields.BundleID)
+				if isv, ok := isvCache[entry.Ad.BundleID]; ok {
+					isvPath = fmt.Sprintf("%s.%s.isv", outputFilePath, entry.Ad.BundleID)
 					err := os.WriteFile(isvPath, isv, 0666)
 					if err != nil {
 						slog.ErrorContext(ctx, "could not write isv file, you'll have to clean up and do it manually",
