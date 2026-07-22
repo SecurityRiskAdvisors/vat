@@ -11,6 +11,7 @@ input AttackAutomationVariable (used in: CreateTemplateTestCases, CreateTestCase
 input CreateAssessmentDataInput (used in: CreateAssessment)
   dataVer: Int
   description: String
+  globalId: String
   killChainId: String
   metadata: [MetadataKeyValuePairInput!]
   name: String!
@@ -31,10 +32,12 @@ input CreateTestCaseAndTemplateMatchByNameInput (used in: CreateTestCases)
   campaignId: String!
   createTestCaseInputs: [CreateTestCaseDataWithTemplateNameInput!]!
   db: String!
+  suppressAutoTimelineEvents: Boolean
 input CreateTestCaseDataInput (used in: CreateTestCases, CreateTestCasesByLibraryId, CreateTestCasesNoTemplate)
   attackAutomation: AttackAutomationInput
   attackStart: Float
   attackStop: Float
+  attackSuccess: AttackSuccessState
   blueTeamMetadata: [MetadataKeyValuePairInput!]
   dataVer: Int
   defenseToolOutcomes: [DefenseToolOutcomeInput!]
@@ -59,6 +62,7 @@ input CreateTestCaseDataInput (used in: CreateTestCases, CreateTestCasesByLibrar
   tags: [String!]
   targets: [String!]
   technique: String!
+  userContext: String
 input CreateTestCaseDataWithLibraryIdInput (used in: CreateTestCasesByLibraryId)
   createNewIfNotExists: Boolean
   libraryTestCaseId: String!
@@ -71,6 +75,7 @@ input CreateTestCaseMatchByLibraryIdInput (used in: CreateTestCasesByLibraryId)
   campaignId: String!
   createTestCaseInputs: [CreateTestCaseDataWithLibraryIdInput!]!
   db: String!
+  suppressAutoTimelineEvents: Boolean
 input CreateTestCaseTemplateDataInput (used in: CreateTemplateTestCases)
   attackAutomation: AttackAutomationInput
   blueTeamMetadata: [MetadataKeyValuePairInput!]
@@ -89,12 +94,14 @@ input CreateTestCaseTemplateDataInput (used in: CreateTemplateTestCases)
   tags: [String]
   technique: String!
   templatePrefix: String
+  userContext: String
 input CreateTestCaseTemplateInput (used in: CreateTemplateTestCases)
   overwrite: Boolean
   testCaseTemplateData: [CreateTestCaseTemplateDataInput!]!
 input CreateTestCaseWithoutTemplateInput (used in: CreateTestCasesNoTemplate)
   campaignId: String!
   db: String!
+  suppressAutoTimelineEvents: Boolean
   testCaseData: [CreateTestCaseDataInput!]!
 input DefenseToolInput (used in: CreateTestCases, CreateTestCasesByLibraryId, CreateTestCasesNoTemplate)
   name: String!
@@ -111,6 +118,11 @@ input RedToolInput (used in: CreateTemplateTestCases, CreateTestCases, CreateTes
 input TemplateNamePrefixInput (used in: CreateTestCases)
   templateName: String!
   templatePrefix: String
+output AppUser (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetLibraryTestCases)
+  createdAt: String
+  id: String
+  updatedAt: String
+  username: String
 output Assessment (used in: CreateAssessment, FindExistingAssessment, FindLibraryAssessment, GetAllAssessments, GetBatchAssessmentsForDb, GetBundleByName)
   assessmentIds: [String!]
   campaigns: [Campaign]
@@ -118,6 +130,7 @@ output Assessment (used in: CreateAssessment, FindExistingAssessment, FindLibrar
   defaultTcDataVer: Int
   defenseTools: [BlueTool!]
   description: String
+  globalId: String
   id: String!
   importTime: Float
   killChain: KillChain
@@ -138,6 +151,15 @@ output AssessmentMutations (used in: CreateAssessment, DeleteAssessment)
   deleteTemplate: DeleteAssessmentTemplatePayload
   update: UpdateAssessmentPayload
   updateTemplate: UpdateAssessmentPayload
+output AttachmentFile (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetLibraryTestCases)
+  createdAt: Float
+  fileSize: Int
+  filename: String!
+  id: Int!
+  metadata: String
+  mimeType: String
+  thumbnailData: String
+  updatedAt: Float
 output AttackLog (used in: GetAllAssessments, GetBatchAssessmentsForDb)
   createTime: Float
   environmentId: String
@@ -217,7 +239,7 @@ output CreateTestCasePayload (used in: CreateTemplateTestCases, CreateTestCases,
 output Database (used in: GetAllDatabases)
   id: Int
   name: String
-output DefenseToolOutcome (used in: GetAllAssessments, GetBatchAssessmentsForDb)
+output DefenseToolOutcome (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetLibraryTestCases)
   defenseToolId: Int!
   outcomeId: String!
 output DefenseToolProduct (used in: GetAllAssessments, GetAllDefenseTools, GetBatchAssessmentsForDb)
@@ -331,6 +353,7 @@ output Source (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetTestCase
   tags: [Tag]
   updateTime: Float
 output Tag (used in: GetAllAssessments, GetAllTags, GetBatchAssessmentsForDb, GetLibraryTestCases)
+  active: Boolean
   createTime: Float
   id: String!
   name: String
@@ -355,10 +378,12 @@ output TestCase (used in: CreateTemplateTestCases, CreateTestCases, CreateTestCa
   activityLogged: String
   alertSeverity: String
   associatedLibraryCampaigns: [Campaign]
+  attachmentFiles: [AttachmentFile]
   attackLogProcedures: [AttackLogProcedure]
   attackStart: TimelineEvent
   attackStealth: AttackStealthEnum
   attackStop: TimelineEvent
+  attackSuccess: AttackSuccessState
   attackVector: AttackVectorEnum
   automationArgument: [AutomationArgument]
   automationCleanup: String
@@ -368,6 +393,7 @@ output TestCase (used in: CreateTemplateTestCases, CreateTestCases, CreateTestCa
   blueTeamMetadata: [MetadataKeyValuePair]
   blueTools: [BlueTool]
   capecId: String
+  completeTime: TimelineEvent
   createTime: Float
   dataVer: Int
   defenseToolOutcomes: [DefenseToolOutcome]
@@ -381,6 +407,7 @@ output TestCase (used in: CreateTemplateTestCases, CreateTestCases, CreateTestCa
   icon: String
   id: String!
   importEventId: String
+  importTime: Float
   internalExternal: InternalExternalEnum
   libraryTestCaseId: String
   metadata: [MetadataKeyValuePair]
@@ -407,7 +434,10 @@ output TestCase (used in: CreateTemplateTestCases, CreateTestCases, CreateTestCa
   techniqueName: String
   templateId: String
   threatSophistication: ThreatSophisticationEnum
+  timelineEvents: [TimelineEvent!]!
+  unstructuredLogs: [UnstructuredLog]
   updateTime: Float
+  userContext: String
 output TestCaseConnection (used in: GetLibraryTestCases, GetTestCaseforDb)
   nodes: [TestCase]
   pageInfo: PageInfo
@@ -425,14 +455,24 @@ output TestCaseMutations (used in: CreateTemplateTestCases, CreateTestCases, Cre
   reassignTestCaseTemplate: ReassignTestCaseTemplatePayload
   update: UpdateTestCasePayload
   updateTemplate: UpdateTestCasePayload
-output TimelineEvent (used in: GetAllAssessments, GetBatchAssessmentsForDb)
+output TimelineEvent (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetLibraryTestCases)
   createTime: Float
+  createdByUser: AppUser
+  designation: TimelineDesignation
   fieldAction: String
   fieldName: String
   id: String
+  lastUpdatedByUser: AppUser
   manualDescription: String
   team: String
+  toolOutcomeChange: DefenseToolOutcome
   type: String
+  updateTime: Float
+output UnstructuredLog (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetLibraryTestCases)
+  content: String
+  createTime: Float
+  filename: String
+  id: String
   updateTime: Float
 output Vendor (used in: GetAllAssessments, GetAllDefenseTools, GetBatchAssessmentsForDb, GetLibraryTestCases)
   createTime: Float

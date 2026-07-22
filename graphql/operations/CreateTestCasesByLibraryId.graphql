@@ -1,3 +1,5 @@
+# @genqlient(for: "CreateTestCaseMatchByLibraryIdInput.suppressAutoTimelineEvents", omitempty: true)
+# @genqlient(for: "CreateTestCaseDataInput.userContext", omitempty: true)
 # @genqlient(for: "CreateTestCaseDataInput.attackAutomation", omitempty: true, pointer:true)
 # @genqlient(for: "CreateTestCaseDataInput.redTools", omitempty: true)
 # @genqlient(for: "RedToolInput.vendor", omitempty: true, pointer:true)

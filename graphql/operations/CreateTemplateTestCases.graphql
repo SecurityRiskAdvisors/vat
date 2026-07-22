@@ -1,3 +1,4 @@
+# @genqlient(for: "CreateTestCaseTemplateDataInput.userContext", omitempty: true)
 # @genqlient(for: "CreateTestCaseTemplateDataInput.attackAutomation", omitempty: true, pointer:true)
 # @genqlient(for: "CreateTestCaseTemplateDataInput.templatePrefix", omitempty: true)
 # @genqlient(for: "CreateTestCaseDataInput.redTools", omitempty: true)

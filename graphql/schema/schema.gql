@@ -58,6 +58,13 @@ enum AlertTriggered {
   No
 }
 
+type AppUser {
+  id: String
+  username: String
+  createdAt: String
+  updatedAt: String
+}
+
 type Assessment {
   id: String!
   name: String!
@@ -87,6 +94,7 @@ type Assessment {
   importTime: Float
   createTime: Float
   updateTime: Float
+  globalId: String
 }
 
 type AssessmentConnection {
@@ -119,6 +127,58 @@ type AssessmentMutations {
   ): DeleteAssessmentTemplatePayload
   update(input: UpdateAssessmentInput!): UpdateAssessmentPayload
   updateTemplate(input: UpdateAssessmentTemplateInput!): UpdateAssessmentPayload
+}
+
+type AssetPropertyType {
+  id: String!
+  name: String
+  sys: Boolean
+  offset: Int
+  createTime: Float
+  updateTime: Float
+}
+
+type AssetPropertyTypeConnection {
+  """
+  List of Asset Property Types
+  """
+  nodes: [AssetPropertyType]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
+}
+
+type AttachmentFile {
+  id: Int!
+  filename: String!
+  fileSize: Int
+  mimeType: String
+
+  """
+  Base64-encoded thumbnail image data
+  """
+  thumbnailData: String
+
+  """
+  JSON string of arbitrary metadata
+  """
+  metadata: String
+  createdAt: Float
+  updatedAt: Float
+}
+
+type AttachmentFileConnection {
+  """
+  List of Attachment Files
+  """
+  nodes: [AttachmentFile]
+
+  """
+  Information to aid in pagination
+  """
+  pageInfo: PageInfo
 }
 
 enum AttackAutomationExecutor {
@@ -184,6 +244,26 @@ enum AttackStealthEnum {
   LOW
   MEDIUM
   HIGH
+}
+
+enum AttackSuccessState {
+  SUCCESS
+  FAIL
+  NA
+}
+
+type AttackToolMutationPayload {
+  attackTools: [RedTool]
+}
+
+type AttackToolMutations {
+  create(input: CreateAttackToolInput!): AttackToolMutationPayload
+  clone(input: CloneAttackToolInput!): AttackToolMutationPayload
+  update(input: UpdateAttackToolInput!): AttackToolMutationPayload
+  createLibrary(input: CreateLibraryAttackToolInput!): AttackToolMutationPayload
+  updateLibrary(input: UpdateLibraryAttackToolInput!): AttackToolMutationPayload
+  delete(input: DeleteRedToolInput!): DeleteAttackToolPayload
+  deleteLibrary(input: DeleteRedToolInput!): DeleteAttackToolPayload
 }
 
 enum AttackVectorEnum {
@@ -330,6 +410,11 @@ type ClDefenseTool {
   name: String @deprecated(reason: "No longer in use")
 }
 
+input CloneAttackToolInput {
+  db: String!
+  libraryAttackToolIds: [String!]
+}
+
 input CloneLibraryDefenseLayerInput {
   db: String!
   libraryDefenseLayerIds: [String!]
@@ -361,6 +446,11 @@ input CreateAssessmentDataInput {
   metadata: [MetadataKeyValuePairInput!]
   organizationIds: [String!]
   dataVer: Int
+
+  """
+  A globally unique identifier (UUID v4) for this assessment. Is auto-generated when omitted from payload, else uses the value provided.
+  """
+  globalId: String
 }
 
 input CreateAssessmentInput {
@@ -417,6 +507,19 @@ input CreateAttackLogProcedureInput {
   KNOWN ISSUE - creating multiple AttackLogEntries per procedure will lead to odd display in UI
   """
   attackLogEntries: [CreateAttackLogEntryInput!]!
+}
+
+input CreateAttackToolDataInput {
+  name: String!
+  description: String
+  vendorId: String!
+  active: Boolean
+  version: String
+}
+
+input CreateAttackToolInput {
+  db: String!
+  attackToolInputs: [CreateAttackToolDataInput!]
 }
 
 input CreateCampaignDataInput {
@@ -507,6 +610,18 @@ type CreateFavoriteTagPayload {
   message: String!
 }
 
+input CreateLibraryAttackToolDataInput {
+  name: String!
+  description: String
+  vendorId: String!
+  active: Boolean
+  version: String
+}
+
+input CreateLibraryAttackToolInput {
+  attackToolInputs: [CreateLibraryAttackToolDataInput!]
+}
+
 input CreateLibraryDefenseLayerDataInput {
   name: String!
   description: String
@@ -591,6 +706,15 @@ input CreateTestCaseAndTemplateMatchByNameInput {
   db: String!
   campaignId: String!
   createTestCaseInputs: [CreateTestCaseDataWithTemplateNameInput!]!
+
+  """
+  When true, suppresses the automatic timeline events that would otherwise be created for
+  status/outcome fields set on any test case in this request. So InProgress/Completed no
+  longer auto-creates attackStart/attackStop events, and a non-TBD outcome no longer
+  auto-creates a detectionTime event. Applies to every test case in this request.
+  Defaults to false when omitted.
+  """
+  suppressAutoTimelineEvents: Boolean
 }
 
 input CreateTestCaseDataInput {
@@ -650,6 +774,12 @@ input CreateTestCaseDataInput {
   blueTeamMetadata: [MetadataKeyValuePairInput!]
   attackAutomation: AttackAutomationInput
   dataVer: Int
+
+  """
+  Free-form field describing the user or execution context for this test case (e.g. a domain account, cloud IAM role, or malware privilege stage). Max 255 characters.
+  """
+  userContext: String
+  attackSuccess: AttackSuccessState
 }
 
 input CreateTestCaseDataWithLibraryIdInput {
@@ -680,6 +810,11 @@ input CreateTestCaseMatchByLibraryIdInput {
   db: String!
   campaignId: String!
   createTestCaseInputs: [CreateTestCaseDataWithLibraryIdInput!]!
+
+  """
+  See CreateTestCaseAndTemplateMatchByNameInput.suppressAutoTimelineEvents.
+  """
+  suppressAutoTimelineEvents: Boolean
 }
 
 type CreateTestCasePayload {
@@ -730,6 +865,11 @@ input CreateTestCaseTemplateDataInput {
   This adds "<prefix> - " prior to the name in the UI. When local data is created in a user database, the prefix is removed from the name. Useful for content organization.
   """
   templatePrefix: String
+
+  """
+  Free-form field describing the user or execution context for this test case (e.g. a domain account, cloud IAM role, or malware privilege stage). Max 255 characters.
+  """
+  userContext: String
 }
 
 input CreateTestCaseTemplateInput {
@@ -744,6 +884,21 @@ input CreateTestCaseWithoutTemplateInput {
   db: String!
   campaignId: String!
   testCaseData: [CreateTestCaseDataInput!]!
+
+  """
+  See CreateTestCaseAndTemplateMatchByNameInput.suppressAutoTimelineEvents.
+  """
+  suppressAutoTimelineEvents: Boolean
+}
+
+input CreateTimelineEventsInput {
+  db: String!
+  events: [TimelineEventInput!]!
+}
+
+type CreateTimelineEventsPayload {
+  items: [TimelineEventCreateItem!]!
+  summary: TimelineEventBatchSummary!
 }
 
 type Database {
@@ -877,6 +1032,10 @@ type DeleteAssessmentTemplatePayload {
   deletedIds: [String!]
 }
 
+type DeleteAttackToolPayload {
+  ids: [String!]
+}
+
 input DeleteCampaignInput {
   db: String!
   ids: [String!]!
@@ -929,6 +1088,10 @@ type DeleteFavoriteTagPayload {
 }
 
 input DeleteLibraryDefenseLayerInput {
+  ids: [String!]!
+}
+
+input DeleteRedToolInput {
   ids: [String!]!
 }
 
@@ -1060,6 +1223,14 @@ input ListOperator_String {
   includes: [String!]
 }
 
+input ManualTimelineEventInput {
+  """
+  input objects must have at least one field so to use the basic "manual event"
+  variant with no additional data, put something in this field.
+  """
+  placeholder: Boolean
+}
+
 enum MatchType {
   ID
   NAME
@@ -1167,6 +1338,8 @@ type Mutation {
   defenseToolProduct: DefenseToolProductMutations
   defenseTool: DefenseToolMutations
   defenseLayer: DefenseLayerMutations
+  attackTool: AttackToolMutations
+  timelineEvent: TimelineEventMutations
 }
 
 input NameFilter {
@@ -1244,6 +1417,10 @@ type Outcome {
   defaultable: Boolean
   icon: String
   parentId: String
+}
+
+input OutcomeChangeEventInput {
+  outcomeId: String!
 }
 
 type OutcomeMutations {
@@ -2195,9 +2372,50 @@ type Query {
     """
     ids: [String!]!
   ): UnstructuredLogConnection
+
+  """
+  Query for attachment files associated with a test case
+  """
+  attachmentFilesForTestCase(
+    """
+    ID of the Test Case
+    """
+    testCaseId: Int!
+  ): AttachmentFileConnection
   vectrAppConfig: VectrAppConfig
   vectrUploadedSSLConfig: UploadedVectrSSLConfig
   vectrSSLConfig: VectrSSLConfig
+  assetPropertyType(
+    """
+    ID of the Asset Property Type to query
+    """
+    id: String!
+  ): AssetPropertyType
+
+  """
+  Query for all Asset Property Types
+  """
+  assetPropertyTypes(
+    """
+    A filter to return a subset of data
+    """
+    filter: NameFilter
+
+    """
+    Returns the first _n_ elements from the list
+    """
+    first: Int
+
+    """
+    Returns the elements in the list that come after the specified cursor
+    """
+    after: String
+
+    """
+    Specifies the sort order for the query
+    """
+    orderBy: BaseSortOrder
+  ): AssetPropertyTypeConnection
 }
 
 input ReassignTestCaseDefenseToolInput {
@@ -2293,6 +2511,10 @@ type SourceMutations {
   create(input: CreateSourceInput!): CreateSourcePayload
 }
 
+input StatusChangeEventInput {
+  status: TestCaseStatus!
+}
+
 input StringOperator {
   eq: String
   contains: String
@@ -2304,6 +2526,7 @@ type Tag {
   sys: Boolean
   tagTypeId: String
   tagColor: String
+  active: Boolean
   offset: Int
   createTime: Float
   updateTime: Float
@@ -2382,6 +2605,12 @@ type TestCase {
   libraryTestCaseId: String
   mitreId: String
   capecId: String
+
+  """
+  Free-form field describing the user or execution context for this test case (e.g. a domain account, cloud IAM role, or malware privilege stage). Max 255 characters.
+  """
+  userContext: String
+  attackSuccess: AttackSuccessState
   techniqueName: String
   icon: String
   deprecated: Boolean
@@ -2416,6 +2645,7 @@ type TestCase {
   automationArgument: [AutomationArgument]
   executionArtifactIdInfo: [ExecutionArtifactIdInfo]
   attackLogProcedures: [AttackLogProcedure]
+  unstructuredLogs: [UnstructuredLog]
   status: String
   offset: Int
   targets: [Target]
@@ -2425,6 +2655,8 @@ type TestCase {
   detectionTime: TimelineEvent
   attackStop: TimelineEvent
   attackStart: TimelineEvent
+  completeTime: TimelineEvent
+  timelineEvents: [TimelineEvent!]!
   references: [String]
 
   """
@@ -2442,6 +2674,8 @@ type TestCase {
   threatSophistication: ThreatSophisticationEnum
   attackVector: AttackVectorEnum
   importEventId: String
+  importTime: Float
+  attachmentFiles: [AttachmentFile]
 }
 
 type TestCaseConnection {
@@ -2600,6 +2834,13 @@ enum ThreatSophisticationEnum {
   STRATEGIC
 }
 
+enum TimelineDesignation {
+  ATTACK_START
+  ATTACK_STOP
+  DETECTION_TIME
+  COMPLETE_TIME
+}
+
 type TimelineEvent {
   id: String
   team: String
@@ -2607,8 +2848,101 @@ type TimelineEvent {
   fieldAction: String
   type: String
   manualDescription: String
+  createdByUser: AppUser
+  lastUpdatedByUser: AppUser
   createTime: Float
   updateTime: Float
+  toolOutcomeChange: DefenseToolOutcome
+
+  """
+  This is set if this timeline event is the attackStart/attackStop/detectionTime/completeTime
+  event for the Test Case specified. Null if this event isn't the current pointer for any of
+  those fields
+  """
+  designation: TimelineDesignation
+}
+
+type TimelineEventBatchSummary {
+  total: Int!
+  succeeded: Int!
+  failed: Int!
+}
+
+type TimelineEventCreateItem {
+  clientId: String!
+  timelineEvent: TimelineEvent
+  errors: [TimelineEventInsertError!]
+
+  """
+  Populated only when this item's designation caused the test case's FK to repoint away
+  from a previously-assigned event. That prior event is left in place, just no longer
+  referenced by this designation.
+  """
+  replacedTimelineEventId: String
+}
+
+enum TimelineEventErrorCode {
+  TEST_CASE_NOT_FOUND
+  TOOL_NOT_FOUND
+  INVALID_OUTCOME_ID
+  INVALID_TEAM
+  INVALID_TYPE
+  MISSING_EVENT_VARIANT
+  DUPLICATE_IN_BATCH
+  VALIDATION_ERROR
+  DUPLICATE_DESIGNATION_IN_BATCH
+  INVALID_TEAM_FOR_DESIGNATION
+  INVALID_TIME_ORDER
+  INVALID_TEAM_FOR_STATUS_CHANGE
+}
+
+input TimelineEventInput {
+  """
+  Correlation token, used to match this item to its result in the payload. Optional - if
+  omitted (or empty), the server generates one and returns it on the corresponding
+  TimelineEventCreateItem. If supplied, must be unique within the request.
+  """
+  clientId: String
+  testCaseId: String!
+  team: String
+  description: String
+  type: String!
+  createTime: DateTime!
+  manualEvent: ManualTimelineEventInput
+  outcomeChange: OutcomeChangeEventInput
+  toolOutcomeChange: ToolOutcomeChangeEventInput
+  statusChange: StatusChangeEventInput
+
+  """
+  Exactly one of manualEvent, outcomeChange, toolOutcomeChange, or statusChange is required.
+  Optional: tags this event as the test case's attackStart/attackStop/detectionTime/completeTime
+  event. Restricted by team (ATTACK_START/ATTACK_STOP require Red, DETECTION_TIME requires
+  Blue, COMPLETE_TIME requires Blue or Neutral) and at most one event per testCaseId per
+  designation is allowed per request. If the test case already has a different event assigned
+  to this designation, this takes precedence and the old event is left in place as a plain
+  timeline event and no longer referenced by a designation.
+  """
+  designation: TimelineDesignation
+}
+
+type TimelineEventInsertError {
+  code: TimelineEventErrorCode!
+  field: String
+  message: String!
+}
+
+type TimelineEventMutations {
+  """
+  Bulk-inserts TimelineEvents linked to ENV Test Cases. Every event is validated first;
+  only valid events are inserted, in one transaction. Invalid events are reported per-item
+  in the response rather than failing the whole request. Max 1000 events per call.
+  """
+  create(input: CreateTimelineEventsInput!): CreateTimelineEventsPayload
+}
+
+input ToolOutcomeChangeEventInput {
+  outcomeId: String!
+  toolId: String!
 }
 
 type UnstructuredLog {
@@ -2664,6 +2998,20 @@ input UpdateAssessmentTemplateDataInput {
 
 input UpdateAssessmentTemplateInput {
   assessmentData: [UpdateAssessmentTemplateDataInput!]!
+}
+
+input UpdateAttackToolDataInput {
+  id: String!
+  name: String
+  description: String
+  vendorId: String
+  active: Boolean
+  version: String
+}
+
+input UpdateAttackToolInput {
+  db: String!
+  attackToolInputs: [UpdateAttackToolDataInput!]
 }
 
 type UpdateCampaignPayload {
@@ -2724,6 +3072,10 @@ input UpdateDefenseToolProductInput {
 
 type UpdateDefenseToolProductPayload {
   defenseToolProducts: [DefenseToolProduct]
+}
+
+input UpdateLibraryAttackToolInput {
+  attackToolInputs: [UpdateAttackToolDataInput!]
 }
 
 input UpdateLibraryDefenseLayerDataInput {
@@ -2791,6 +3143,12 @@ input UpdateTestCaseDataInput {
   attackAutomation: AttackAutomationInput
   dataVer: Int
   overrideOutcome: Boolean
+
+  """
+  Free-form field describing the user or execution context for this test case (e.g. a domain account, cloud IAM role, or malware privilege stage). Max 255 characters.
+  """
+  userContext: String
+  attackSuccess: AttackSuccessState
 }
 
 input UpdateTestCaseInput {
@@ -2832,6 +3190,11 @@ input UpdateTestCaseTemplateDataInput {
   blueTeamMetadata: [MetadataKeyValuePairInput!]
   attackAutomation: AttackAutomationInput
   operatorGuidance: String
+
+  """
+  Free-form field describing the user or execution context for this test case (e.g. a domain account, cloud IAM role, or malware privilege stage). Max 255 characters.
+  """
+  userContext: String
 }
 
 input UpdateTestCaseTemplateInput {
