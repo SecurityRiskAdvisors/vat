@@ -46,7 +46,9 @@ type AssessmentData struct {
 	// assessment (name -> full Organization object) — there is no separate
 	// flat name list. Callers that just need names use
 	// slices.Collect(maps.Keys(OrgMap)).
-	OrgMap OrgMapResource
+	OrgMap     OrgMapResource
+	ToolsMap   ToolsMapResource
+	IdToolsMap IdToolsMapResource
 	// Manifest is save-time provenance and part of the wire file itself —
 	// see Manifest's doc comment. Stamped via NewManifestMetadata at save
 	// time; handed back as-is by DecodeJson.

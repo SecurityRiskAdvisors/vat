@@ -182,11 +182,11 @@ func genAssessmentData(t *rapid.T) *vat.AssessmentData {
 		AssessmentResource: vat.AssessmentResource{
 			Assessment:         genAssessment(t),
 			TemplateAssessment: rapid.String().Draw(t, "templateAssessment"),
-			ToolsMap:           genToolsMap(t, "toolsMap"),
-			IdToolsMap:         genToolsMap(t, "idToolsMap"),
 			BundleID:           rapid.String().Draw(t, "bundleID"),
 			BundlePrefix:       rapid.String().Draw(t, "bundlePrefix"),
 		},
+		ToolsMap:         genToolsMap(t, "toolsMap"),
+		IdToolsMap:       genToolsMap(t, "idToolsMap"),
 		OrgMap:           genOrgMap(t),
 		LibraryTestCases: genLibraryTestCasesResource(t),
 		Manifest: vat.Manifest{
@@ -335,6 +335,8 @@ func TestResourceRequirements(t *testing.T) {
 		vat.ResourceAssessment:       true,
 		vat.ResourceLibraryTestCases: true,
 		vat.ResourceOrgMap:           true,
+		vat.ResourceToolsMap:         true,
+		vat.ResourceIdToolsMap:       true,
 	}
 
 	names := vat.ResourceNames()
@@ -508,6 +510,8 @@ func TestAssessmentDataFieldsAreAccountedFor(t *testing.T) {
 		"AssessmentResource": true, // backs vat.ResourceAssessment
 		"LibraryTestCases":   true, // backs vat.ResourceLibraryTestCases
 		"OrgMap":             true, // backs vat.ResourceOrgMap
+		"ToolsMap":           true, // backs vat.ResourceToolsMap
+		"IdToolsMap":         true, // backs vat.ResourceIdToolsMap
 	}
 	// Fields that are part of the wire file but travel via the envelope's
 	// manifest, not through resourceRegistry's per-resource dispatch.

@@ -42,12 +42,11 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		"db", db,
 		"assessment_name", assessment_name)
 	data := &AssessmentData{
-		AssessmentResource: AssessmentResource{
-			ToolsMap:   map[string]GenericBlueTool{},
-			IdToolsMap: map[string]GenericBlueTool{},
-		},
-		OrgMap:   make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
-		Manifest: NewManifestMetadata(ctx),
+		AssessmentResource: AssessmentResource{},
+		ToolsMap:           map[string]GenericBlueTool{},
+		IdToolsMap:         map[string]GenericBlueTool{},
+		OrgMap:             make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
+		Manifest:           NewManifestMetadata(ctx),
 	}
 
 	if data.Manifest.VectrVersion != TAGGED_VECTR_VERSION {

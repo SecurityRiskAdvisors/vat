@@ -39,6 +39,8 @@ const (
 	ResourceAssessment       = "assessment"
 	ResourceLibraryTestCases = "librarytestcases"
 	ResourceOrgMap           = "orgmap"
+	ResourceToolsMap         = "toolsmap"
+	ResourceIdToolsMap       = "idtoolsmap"
 )
 
 // ResourceRequirement describes whether a resource must be present for vat
@@ -106,6 +108,26 @@ var resourceRegistry = []resourceDescriptor{
 		},
 		Decode: func(a *AssessmentData, raw json.RawMessage) error {
 			return json.Unmarshal(raw, &a.OrgMap)
+		},
+	},
+	{
+		Name:     ResourceToolsMap,
+		Required: ResourceRequired,
+		Encode: func(a *AssessmentData) (json.RawMessage, error) {
+			return json.Marshal(a.ToolsMap)
+		},
+		Decode: func(a *AssessmentData, raw json.RawMessage) error {
+			return json.Unmarshal(raw, &a.ToolsMap)
+		},
+	},
+	{
+		Name:     ResourceIdToolsMap,
+		Required: ResourceRequired,
+		Encode: func(a *AssessmentData) (json.RawMessage, error) {
+			return json.Marshal(a.IdToolsMap)
+		},
+		Decode: func(a *AssessmentData, raw json.RawMessage) error {
+			return json.Unmarshal(raw, &a.IdToolsMap)
 		},
 	},
 }
@@ -200,8 +222,6 @@ type envelope struct {
 type AssessmentResource struct {
 	Assessment         dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment
 	TemplateAssessment string
-	ToolsMap           map[string]GenericBlueTool
-	IdToolsMap         map[string]GenericBlueTool
 	BundleID           string
 	BundlePrefix       string
 }
@@ -212,6 +232,9 @@ type AssessmentResource struct {
 type LibraryTestCasesResource map[string]dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase
 
 type OrgMapResource map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
+
+type ToolsMapResource map[string]GenericBlueTool
+type IdToolsMapResource map[string]GenericBlueTool
 
 // EncodeToJson serializes an AssessmentData into the manifest+resource
 // envelope wire format.
