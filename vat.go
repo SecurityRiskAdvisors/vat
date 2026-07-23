@@ -42,6 +42,11 @@ type GenericBlueTool struct {
 type AssessmentData struct {
 	AssessmentResource
 	LibraryTestCases LibraryTestCasesResource
+	// OrgMap is the sole source of the organization names referenced by this
+	// assessment (name -> full Organization object) — there is no separate
+	// flat name list. Callers that just need names use
+	// slices.Collect(maps.Keys(OrgMap)).
+	OrgMap OrgMapResource
 	// Manifest is save-time provenance and part of the wire file itself —
 	// see Manifest's doc comment. Stamped via NewManifestMetadata at save
 	// time; handed back as-is by DecodeJson.

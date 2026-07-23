@@ -45,8 +45,8 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		AssessmentResource: AssessmentResource{
 			ToolsMap:   map[string]GenericBlueTool{},
 			IdToolsMap: map[string]GenericBlueTool{},
-			OrgMap:     make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 		},
+		OrgMap:   make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 		Manifest: NewManifestMetadata(ctx),
 	}
 

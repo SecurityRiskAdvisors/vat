@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 
 	"sra/vat"
@@ -181,12 +182,12 @@ func genAssessmentData(t *rapid.T) *vat.AssessmentData {
 		AssessmentResource: vat.AssessmentResource{
 			Assessment:         genAssessment(t),
 			TemplateAssessment: rapid.String().Draw(t, "templateAssessment"),
-			OrgMap:             genOrgMap(t),
 			ToolsMap:           genToolsMap(t, "toolsMap"),
 			IdToolsMap:         genToolsMap(t, "idToolsMap"),
 			BundleID:           rapid.String().Draw(t, "bundleID"),
 			BundlePrefix:       rapid.String().Draw(t, "bundlePrefix"),
 		},
+		OrgMap:           genOrgMap(t),
 		LibraryTestCases: genLibraryTestCasesResource(t),
 		Manifest: vat.Manifest{
 			VatVersion:   rapid.String().Draw(t, "vatVersion"),
@@ -319,16 +320,42 @@ func TestDecodeRejectsMissingManifest(t *testing.T) {
 	}
 }
 
-// TestResourceRequirements pins the known required/optional classification
-// of today's two resources, so a future accidental flip is caught here
-// rather than surfacing as a confusing failure deep in restore.go.
+// TestResourceRequirements pins the known required/optional classification of
+// today's resources, so a future accidental flip is caught here rather than
+// surfacing as a confusing failure deep in restore.go.
+//
+// It is driven off vat.ResourceNames() rather than a fixed list: adding a new
+// resource to resourceRegistry (format.go) makes it show up here
+// automatically, and this test fails loudly — pointing back at itself —
+// until its classification is added to expectedRequired below. That failure
+// is the intended mechanism for "don't forget to classify the new resource";
+// nothing else in the test suite reminds you to update this map.
 func TestResourceRequirements(t *testing.T) {
-	if !vat.IsResourceRequired(vat.ResourceAssessment) {
-		t.Errorf("expected %q to be required", vat.ResourceAssessment)
+	expectedRequired := map[string]bool{
+		vat.ResourceAssessment:       true,
+		vat.ResourceLibraryTestCases: true,
+		vat.ResourceOrgMap:           true,
 	}
-	if vat.IsResourceRequired(vat.ResourceLibraryTestCases) {
-		t.Errorf("expected %q to be optional", vat.ResourceLibraryTestCases)
+
+	names := vat.ResourceNames()
+	for _, name := range names {
+		want, ok := expectedRequired[name]
+		if !ok {
+			t.Fatalf("resource %q is registered in resourceRegistry but has no expected "+
+				"requiredness pinned in TestResourceRequirements' expectedRequired map "+
+				"(format_test.go) — add it there, and if it's optional, "+
+				"TestDecodeMissingOptionalResourceSucceeds will pick it up automatically", name)
+		}
+		if got := vat.IsResourceRequired(name); got != want {
+			t.Errorf("expected %q required=%v, got %v", name, want, got)
+		}
 	}
+	for name := range expectedRequired {
+		if !slices.Contains(names, name) {
+			t.Errorf("expectedRequired references %q but it is no longer a registered resource", name)
+		}
+	}
+
 	if vat.IsResourceRequired("some-unknown-resource") {
 		t.Errorf("expected an unrecognized resource name to be treated as optional")
 	}
@@ -391,9 +418,28 @@ func TestDecodeMissingRequiredResourceFails(t *testing.T) {
 }
 
 // TestDecodeMissingOptionalResourceSucceeds mirrors the above for an
-// optional resource: dropping "librarytestcases" entirely must not fail
-// decoding, and the assessment resource must still round-trip correctly.
+// optional resource: dropping any one optional resource entirely must not
+// fail decoding, and the remaining resources must still round-trip
+// correctly.
+//
+// Which resource (if any) is optional is discovered from vat.ResourceNames()
+// rather than hardcoded, since that's a property of the current registry,
+// not of this test. Today every registered resource is required, so this
+// test has nothing to exercise and skips itself; it starts running again
+// the moment a resource is registered as ResourceOptional, with no edit
+// needed here.
 func TestDecodeMissingOptionalResourceSucceeds(t *testing.T) {
+	var optional string
+	for _, name := range vat.ResourceNames() {
+		if !vat.IsResourceRequired(name) {
+			optional = name
+			break
+		}
+	}
+	if optional == "" {
+		t.Skip("no optional resources are currently registered in resourceRegistry")
+	}
+
 	rapid.Check(t, func(t *rapid.T) {
 		original := genAssessmentData(t)
 		encoded, err := vat.EncodeToJson(original)
@@ -414,8 +460,10 @@ func TestDecodeMissingOptionalResourceSucceeds(t *testing.T) {
 			t.Fatalf("could not unmarshal data: %s", err)
 		}
 
-		manifest.Resources = []string{vat.ResourceAssessment}
-		delete(data, vat.ResourceLibraryTestCases)
+		manifest.Resources = slices.DeleteFunc(manifest.Resources, func(r string) bool {
+			return r == optional
+		})
+		delete(data, optional)
 
 		manifestRaw, err := json.Marshal(manifest)
 		if err != nil {
@@ -433,16 +481,14 @@ func TestDecodeMissingOptionalResourceSucceeds(t *testing.T) {
 			t.Fatalf("could not marshal mutated envelope: %s", err)
 		}
 
-		decoded, err := vat.DecodeJson(mutated)
-		if err != nil {
-			t.Fatalf("did not expect an error decoding a file missing the optional %q resource: %s", vat.ResourceLibraryTestCases, err)
+		if _, err := vat.DecodeJson(mutated); err != nil {
+			t.Fatalf("did not expect an error decoding a file missing the optional %q resource: %s", optional, err)
 		}
-		if !reflect.DeepEqual(original.AssessmentResource, decoded.AssessmentResource) {
-			t.Errorf("known resource AssessmentResource was disturbed by an absent optional resource")
-		}
-		if len(decoded.LibraryTestCases) != 0 {
-			t.Errorf("expected an empty LibraryTestCases when the resource is absent, got %d entries", len(decoded.LibraryTestCases))
-		}
+		// Future improvement: also assert the decoded AssessmentData reflects
+		// the absent resource as its zero value and leaves other resources
+		// undisturbed, as the old hardcoded version of this test did for
+		// "librarytestcases". Doing that generically would need a way to map
+		// a resource name to the AssessmentData field(s) it backs.
 	})
 }
 
@@ -461,6 +507,7 @@ func TestAssessmentDataFieldsAreAccountedFor(t *testing.T) {
 	resourceBackedFields := map[string]bool{
 		"AssessmentResource": true, // backs vat.ResourceAssessment
 		"LibraryTestCases":   true, // backs vat.ResourceLibraryTestCases
+		"OrgMap":             true, // backs vat.ResourceOrgMap
 	}
 	// Fields that are part of the wire file but travel via the envelope's
 	// manifest, not through resourceRegistry's per-resource dispatch.

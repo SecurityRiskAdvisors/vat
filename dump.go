@@ -81,8 +81,8 @@ func DumpInstance(ctx context.Context, client graphql.Client, filter *util.Filte
 						AssessmentResource: AssessmentResource{
 							ToolsMap:   map[string]GenericBlueTool{},
 							IdToolsMap: map[string]GenericBlueTool{},
-							OrgMap:     make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 						},
+						OrgMap:   make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 						Manifest: NewManifestMetadata(ctx),
 					}
 					ad, err := saveAssessment(ctx, client, assessment, data, db.Name)

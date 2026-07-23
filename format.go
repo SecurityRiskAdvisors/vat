@@ -38,6 +38,7 @@ const FormatVersion = "1.0"
 const (
 	ResourceAssessment       = "assessment"
 	ResourceLibraryTestCases = "librarytestcases"
+	ResourceOrgMap           = "orgmap"
 )
 
 // ResourceRequirement describes whether a resource must be present for vat
@@ -97,6 +98,16 @@ var resourceRegistry = []resourceDescriptor{
 			return json.Unmarshal(raw, &a.LibraryTestCases)
 		},
 	},
+	{
+		Name:     ResourceOrgMap,
+		Required: ResourceRequired,
+		Encode: func(a *AssessmentData) (json.RawMessage, error) {
+			return json.Marshal(a.OrgMap)
+		},
+		Decode: func(a *AssessmentData, raw json.RawMessage) error {
+			return json.Unmarshal(raw, &a.OrgMap)
+		},
+	},
 }
 
 // IsResourceRequired reports whether name is a resource vat cannot function
@@ -109,6 +120,18 @@ func IsResourceRequired(name string) bool {
 		}
 	}
 	return false
+}
+
+// ResourceNames returns the names of every resource registered in
+// resourceRegistry, in registration order. It exists so callers outside this
+// package (notably tests) can enumerate known resources without duplicating
+// resourceRegistry's contents by hand.
+func ResourceNames() []string {
+	names := make([]string, len(resourceRegistry))
+	for i, d := range resourceRegistry {
+		names[i] = d.Name
+	}
+	return names
 }
 
 // Manifest describes the contents of a serialized vat file. It deliberately
@@ -177,21 +200,18 @@ type envelope struct {
 type AssessmentResource struct {
 	Assessment         dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment
 	TemplateAssessment string
-	// OrgMap is the sole source of the organization names referenced by this
-	// assessment (name -> full Organization object) — there is no separate
-	// flat name list. Callers that just need names use
-	// slices.Collect(maps.Keys(OrgMap)).
-	OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
-	ToolsMap     map[string]GenericBlueTool
-	IdToolsMap   map[string]GenericBlueTool
-	BundleID     string
-	BundlePrefix string
+	ToolsMap           map[string]GenericBlueTool
+	IdToolsMap         map[string]GenericBlueTool
+	BundleID           string
+	BundlePrefix       string
 }
 
 // LibraryTestCasesResource is the "librarytestcases" resource: library test
 // cases referenced by an assessment's campaigns, keyed by library test case
 // id.
 type LibraryTestCasesResource map[string]dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase
+
+type OrgMapResource map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
 
 // EncodeToJson serializes an AssessmentData into the manifest+resource
 // envelope wire format.

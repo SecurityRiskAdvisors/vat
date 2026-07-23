@@ -57,10 +57,9 @@ func (m *MockGraphQLClient) MakeRequest(
 func TestRestoreAssessment_MissingOrganizations(t *testing.T) {
 	// Mock input data
 	data := &vat.AssessmentData{
-		AssessmentResource: vat.AssessmentResource{
-			OrgMap: map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization{
-				"MissingOrg": {},
-			},
+		AssessmentResource: vat.AssessmentResource{},
+		OrgMap: map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization{
+			"MissingOrg": {},
 		},
 	}
 
