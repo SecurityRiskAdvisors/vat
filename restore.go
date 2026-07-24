@@ -313,15 +313,17 @@ func restoreCampaigns(
 	for _, c := range campaignsToRestore {
 		// there could be a mix of test case types in a campaign, so add both types in
 		tc_with_library := NewGroupedCreateTestCaseWithLibraryIdInput(dao.CreateTestCaseMatchByLibraryIdInput{
-			Db:                   db,
-			CampaignId:           campaign_map[c.Name],
-			CreateTestCaseInputs: []dao.CreateTestCaseDataWithLibraryIdInput{},
+			Db:                         db,
+			CampaignId:                 campaign_map[c.Name],
+			CreateTestCaseInputs:       []dao.CreateTestCaseDataWithLibraryIdInput{},
+			SuppressAutoTimelineEvents: true,
 		})
 
 		tc_no_template := dao.CreateTestCaseWithoutTemplateInput{
-			Db:           db,
-			CampaignId:   campaign_map[c.Name],
-			TestCaseData: []dao.CreateTestCaseDataInput{},
+			Db:                         db,
+			CampaignId:                 campaign_map[c.Name],
+			TestCaseData:               []dao.CreateTestCaseDataInput{},
+			SuppressAutoTimelineEvents: true,
 		}
 
 		// have to do this here (maybe make this an object in the future)
@@ -350,6 +352,8 @@ func restoreCampaigns(
 				AttackStop:       serialized_tc.AttackStop.CreateTime,
 				DataVer:          serialized_tc.DataVer,
 				OverrideOutcome:  serialized_tc.OverrideOutcome,
+				UserContext:      serialized_tc.UserContext,
+				AttackSuccess:    serialized_tc.AttackSuccess,
 				//Tags:                  []string{}, //to be handled below
 				//Targets:               []string{}, // to be handled below
 				//Sources:               []string{},
@@ -715,6 +719,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				Description: ad.Assessment.Description,
 				KillChainId: ad.Assessment.KillChain.Id,
 				DataVer:     ad.Assessment.DefaultTcDataVer,
+				GlobalId:    ad.Assessment.GlobalId,
 				//OrganizationIds: []string{}, //handle below
 				//Metadata: []MetadataKeyValuePairInput{}, // handle below
 			},
@@ -879,6 +884,8 @@ func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcas
 		References:      template_test_case.References,
 		// RedTools:          []RedToolInput{}, //handle below
 		OperatorGuidance: template_test_case.OperatorGuidance,
+		UserContext:      template_test_case.UserContext,
+
 		// RedTeamMetadata:   []MetadataKeyValuePairInput{}, //handle below
 		// BlueTeamMetadata:  []MetadataKeyValuePairInput{}, //handle below
 		// AttackAutomation:  &AttackAutomationInput{},      //handle below

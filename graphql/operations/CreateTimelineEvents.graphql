@@ -1,0 +1,22 @@
+mutation CreateTimelineEvents(
+    $input: CreateTimelineEventsInput!
+    ) {
+  timelineEvent {
+    create(input: $input) {
+      items {
+        clientId
+        errors {
+          code
+          field
+          message
+        }
+        replacedTimelineEventId
+      }
+      summary {
+        total
+        succeeded
+        failed
+      }
+    }
+  }
+}
