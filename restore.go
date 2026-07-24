@@ -85,26 +85,44 @@ func NewGroupedCreateTestCaseWithLibraryIdInput(td dao.CreateTestCaseMatchByLibr
 			Db:         td.Db,
 			CampaignId: td.CampaignId,
 		},
-		TestCases: make(map[LibraryTestCaseIdIndex][]dao.CreateTestCaseDataWithLibraryIdInput),
+		TestCases: make(map[LibraryTestCaseIdIndex][]*libraryIdInsert),
 	}
 }
 
 type LibraryTestCaseIdIndex string
+
+// libraryIdInsert pairs a queued test case insert with the source test case's
+// own ID (clientId, used later to resolve timeline events back to this test
+// case) and its libraryTestCaseId (used to resolve this entry against the
+// batch response, since response order isn't guaranteed but libraryTestCaseId
+// is unique within a single batch). newId is filled in once the batch's
+// mutation response has been resolved.
+type libraryIdInsert struct {
+	clientId          string
+	libraryTestCaseId string
+	data              dao.CreateTestCaseDataWithLibraryIdInput
+	newId             string
+}
 
 // This is an object that will handle creating objects for campaigns, instead of the default
 // This allows us to split out the requests so we don't have one requests with multiple library
 // test case ids
 type GroupedCreateTestCaseWithLibraryIdInput struct {
 	Base      dao.CreateTestCaseMatchByLibraryIdInput
-	TestCases map[LibraryTestCaseIdIndex][]dao.CreateTestCaseDataWithLibraryIdInput
+	TestCases map[LibraryTestCaseIdIndex][]*libraryIdInsert
 }
 
-func (g *GroupedCreateTestCaseWithLibraryIdInput) Add(tcd dao.CreateTestCaseDataWithLibraryIdInput) {
-	if _, ok := g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)]; !ok {
-		g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)] = make([]dao.CreateTestCaseDataWithLibraryIdInput, 0, 5)
+func (g *GroupedCreateTestCaseWithLibraryIdInput) Add(clientId string, tcd dao.CreateTestCaseDataWithLibraryIdInput) {
+	key := LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)
+	if _, ok := g.TestCases[key]; !ok {
+		g.TestCases[key] = make([]*libraryIdInsert, 0, 5)
 	}
 
-	g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)] = append(g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)], tcd)
+	g.TestCases[key] = append(g.TestCases[key], &libraryIdInsert{
+		clientId:          clientId,
+		libraryTestCaseId: tcd.LibraryTestCaseId,
+		data:              tcd,
+	})
 }
 
 func (g *GroupedCreateTestCaseWithLibraryIdInput) Len() int {
@@ -117,12 +135,20 @@ func (g *GroupedCreateTestCaseWithLibraryIdInput) Len() int {
 	return size
 }
 
-func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.CreateTestCaseMatchByLibraryIdInput {
+// libraryIdBatch is one generated batch: the GraphQL input to send, plus the
+// entries that produced it, built in lockstep so entries[j] always
+// corresponds to input.CreateTestCaseInputs[j].
+type libraryIdBatch struct {
+	input   dao.CreateTestCaseMatchByLibraryIdInput
+	entries []*libraryIdInsert
+}
+
+func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []libraryIdBatch {
 	maxSize := 0
 
-	for _, testcases := range g.TestCases {
-		if len(testcases) > maxSize {
-			maxSize = len(testcases)
+	for _, entries := range g.TestCases {
+		if len(entries) > maxSize {
+			maxSize = len(entries)
 		}
 	}
 
@@ -130,21 +156,21 @@ func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.Cr
 		return nil
 	}
 
-	results := make([]dao.CreateTestCaseMatchByLibraryIdInput, 0, maxSize)
+	results := make([]libraryIdBatch, 0, maxSize)
 
 	for i := 0; i < maxSize; i++ {
-		var obj dao.CreateTestCaseMatchByLibraryIdInput
-		obj.Db = g.Base.Db
-		obj.CampaignId = g.Base.CampaignId
-		obj.CreateTestCaseInputs = []dao.CreateTestCaseDataWithLibraryIdInput{}
-		for _, testcases := range g.TestCases {
-			if len(testcases) > (i) {
-				obj.CreateTestCaseInputs = append(obj.CreateTestCaseInputs, testcases[i])
+		batch := libraryIdBatch{}
+		batch.input.Db = g.Base.Db
+		batch.input.CampaignId = g.Base.CampaignId
+		for _, entries := range g.TestCases {
+			if len(entries) > (i) {
+				batch.input.CreateTestCaseInputs = append(batch.input.CreateTestCaseInputs, entries[i].data)
+				batch.entries = append(batch.entries, entries[i])
 			} else {
 				continue
 			}
 		}
-		results = append(results, obj)
+		results = append(results, batch)
 	}
 	return results
 }
@@ -431,7 +457,7 @@ func restoreCampaigns(
 					CreateNewIfNotExists: false,
 					TestCaseData:         testCaseData,
 				}
-				tc_with_library.Add(tcd)
+				tc_with_library.Add(serialized_tc.Id, tcd)
 			}
 		}
 		slog.DebugContext(ctx, "Creating test cases",
@@ -440,17 +466,34 @@ func restoreCampaigns(
 			"test-case-count-no-template", len(tc_no_template.TestCaseData),
 			"assessment_name", assessmentName)
 		if tc_with_library.Len() > 0 {
-			inserts := tc_with_library.GenerateInsertsData()
-			for _, insertdata := range inserts {
-				_, err := dao.CreateTestCasesByLibraryId(ctx, client, insertdata)
+			for _, batch := range tc_with_library.GenerateInsertsData() {
+				r, err := dao.CreateTestCasesByLibraryId(ctx, client, batch.input)
 				if err != nil {
 					if gqlObject, ok := gqlErrParse(err); ok {
 						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 					}
 					return fmt.Errorf("could not write test cases for %s, campaign: %s; check vectr version: %w", assessmentName, c.Name, err)
 				}
-				testCaseCount += len(insertdata.CreateTestCaseInputs)
+				byLibraryId := make(map[string]*libraryIdInsert, len(batch.entries))
+				for _, e := range batch.entries {
+					byLibraryId[e.libraryTestCaseId] = e
+				}
+				for _, tc := range r.TestCase.CreateWithTemplateMatchByLibraryId.TestCases {
+					if e, ok := byLibraryId[tc.LibraryTestCaseId]; ok {
+						e.newId = tc.Id
+					}
+				}
+				testCaseCount += len(batch.input.CreateTestCaseInputs)
 			}
+
+			// clientId (source test case ID) -> new test case ID, for this campaign only.
+			testCaseIdMap := make(map[string]string, tc_with_library.Len())
+			for _, entries := range tc_with_library.TestCases {
+				for _, e := range entries {
+					testCaseIdMap[e.clientId] = e.newId
+				}
+			}
+			_ = testCaseIdMap // consumed by the timeline-event restore step, right after this
 		}
 		if len(tc_no_template.TestCaseData) > 0 {
 			_, err := dao.CreateTestCasesNoTemplate(ctx, client, tc_no_template)
