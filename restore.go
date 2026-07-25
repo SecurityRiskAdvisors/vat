@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"sra/vat/internal/dao"
 
@@ -54,6 +55,7 @@ var outcomeStatusMap map[string]dao.TestCaseStatus = map[string]dao.TestCaseStat
 	string(dao.TestCaseStatusInprogress):   dao.TestCaseStatusInprogress,
 	string(dao.TestCaseStatusPaused):       dao.TestCaseStatusPaused,
 	"Not Performed":                        dao.TestCaseStatusNotperformed,
+	"In Progress":                          dao.TestCaseStatusInprogress,
 }
 
 type AutomationArgumentTypes interface {
@@ -79,11 +81,12 @@ type Automator[A AutomationArgumentTypes] interface {
 	GetAutomationArgument() []A
 }
 
-func NewGroupedCreateTestCaseWithLibraryIdInput(td dao.CreateTestCaseMatchByLibraryIdInput) *GroupedCreateTestCaseWithLibraryIdInput {
+func NewGroupedCreateTestCaseWithLibraryIdInput(db, campaignId string) *GroupedCreateTestCaseWithLibraryIdInput {
 	return &GroupedCreateTestCaseWithLibraryIdInput{
 		Base: dao.CreateTestCaseMatchByLibraryIdInput{
-			Db:         td.Db,
-			CampaignId: td.CampaignId,
+			Db:                         db,
+			CampaignId:                 campaignId,
+			SuppressAutoTimelineEvents: true,
 		},
 		TestCases: make(map[LibraryTestCaseIdIndex][]*libraryIdInsert),
 	}
@@ -162,6 +165,7 @@ func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []librar
 		batch := libraryIdBatch{}
 		batch.input.Db = g.Base.Db
 		batch.input.CampaignId = g.Base.CampaignId
+		batch.input.SuppressAutoTimelineEvents = g.Base.SuppressAutoTimelineEvents
 		for _, entries := range g.TestCases {
 			if len(entries) > (i) {
 				batch.input.CreateTestCaseInputs = append(batch.input.CreateTestCaseInputs, entries[i].data)
@@ -338,12 +342,7 @@ func restoreCampaigns(
 	testCaseCount := 0
 	for _, c := range campaignsToRestore {
 		// there could be a mix of test case types in a campaign, so add both types in
-		tc_with_library := NewGroupedCreateTestCaseWithLibraryIdInput(dao.CreateTestCaseMatchByLibraryIdInput{
-			Db:                         db,
-			CampaignId:                 campaign_map[c.Name],
-			CreateTestCaseInputs:       []dao.CreateTestCaseDataWithLibraryIdInput{},
-			SuppressAutoTimelineEvents: true,
-		})
+		tc_with_library := NewGroupedCreateTestCaseWithLibraryIdInput(db, campaign_map[c.Name])
 
 		tc_no_template := dao.CreateTestCaseWithoutTemplateInput{
 			Db:                         db,
@@ -352,6 +351,7 @@ func restoreCampaigns(
 			SuppressAutoTimelineEvents: true,
 		}
 
+		timelineEntriesCount := 0
 		// have to do this here (maybe make this an object in the future)
 		// but basically, I need to check if the outcome is in the map
 		// if it is not, throw an error
@@ -360,6 +360,7 @@ func restoreCampaigns(
 				slog.ErrorContext(ctx, "could not find outcome for this test case", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name, "campaign-id", c.Id, "test-case-id", serialized_tc.Id)
 				return fmt.Errorf("outcome %s not found", serialized_tc.Status)
 			}
+			timelineEntriesCount += len(serialized_tc.TimelineEvents)
 			testCaseData := dao.CreateTestCaseDataInput{
 				Name:             serialized_tc.Name,
 				Description:      serialized_tc.Description,
@@ -371,15 +372,16 @@ func restoreCampaigns(
 				PreventionSteps:  serialized_tc.PreventionGuidance,
 				OutcomePath:      serialized_tc.Outcome.Path,
 				OutcomeNotes:     serialized_tc.OutcomeNotes,
-				DetectionTime:    serialized_tc.DetectionTime.CreateTime,
 				References:       serialized_tc.References,
 				OperatorGuidance: serialized_tc.OperatorGuidance,
-				AttackStart:      serialized_tc.AttackStart.CreateTime,
-				AttackStop:       serialized_tc.AttackStop.CreateTime,
 				DataVer:          serialized_tc.DataVer,
 				OverrideOutcome:  serialized_tc.OverrideOutcome,
 				UserContext:      serialized_tc.UserContext,
 				AttackSuccess:    serialized_tc.AttackSuccess,
+				// these are no longer required, they are handled by timeline events
+				//AttackStart:      serialized_tc.AttackStart.CreateTime,
+				//AttackStop:       serialized_tc.AttackStop.CreateTime,
+				//DetectionTime:    serialized_tc.DetectionTime.CreateTime,
 				//Tags:                  []string{}, //to be handled below
 				//Targets:               []string{}, // to be handled below
 				//Sources:               []string{},
@@ -391,10 +393,11 @@ func restoreCampaigns(
 				//RedTools:              []RedToolInput{},
 				//DefenseToolOutcomes:   []DefenseToolOutcomeInput{},   // handle below
 			}
-			if testCaseData.AttackStart == 0 {
-				slog.WarnContext(ctx, "Attack Start is set to 0, reset to the AttackStop time", "attack-stop-time", testCaseData.AttackStop, "campaign-name", c.Name, "test-case-name", serialized_tc.Name)
-				testCaseData.AttackStart = testCaseData.AttackStop
-			}
+			// Need to check if this logic has issues still
+			//if testCaseData.AttackStart == 0 {
+			//	slog.WarnContext(ctx, "Attack Start is set to 0, reset to the AttackStop time", "attack-stop-time", testCaseData.AttackStop, "campaign-name", c.Name, "test-case-name", serialized_tc.Name)
+			//	testCaseData.AttackStart = testCaseData.AttackStop
+			//}
 			for _, tag := range serialized_tc.Tags {
 				testCaseData.Tags = append(testCaseData.Tags, tag.Name)
 			}
@@ -465,6 +468,7 @@ func restoreCampaigns(
 			"test_case_count", tc_with_library.Len(),
 			"test-case-count-no-template", len(tc_no_template.TestCaseData),
 			"assessment_name", assessmentName)
+		var testCaseIdMap map[string]string
 		if tc_with_library.Len() > 0 {
 			for _, batch := range tc_with_library.GenerateInsertsData() {
 				r, err := dao.CreateTestCasesByLibraryId(ctx, client, batch.input)
@@ -487,7 +491,7 @@ func restoreCampaigns(
 			}
 
 			// clientId (source test case ID) -> new test case ID, for this campaign only.
-			testCaseIdMap := make(map[string]string, tc_with_library.Len())
+			testCaseIdMap = make(map[string]string, tc_with_library.Len())
 			for _, entries := range tc_with_library.TestCases {
 				for _, e := range entries {
 					testCaseIdMap[e.clientId] = e.newId
@@ -504,6 +508,120 @@ func restoreCampaigns(
 				return fmt.Errorf("could not write test cases for %s: %w", assessmentName, err)
 			}
 			testCaseCount += len(tc_no_template.TestCaseData)
+		}
+		// Here's where we add the timelines
+		timelineEventInsert := &dao.CreateTimelineEventsInput{
+			Db:     db,
+			Events: make([]dao.TimelineEventInput, 0, timelineEntriesCount),
+		}
+
+		for _, stc := range c.TestCases {
+			if _, ok := testCaseIdMap[stc.Id]; !ok {
+				continue
+			}
+			for _, te := range stc.TimelineEvents {
+				teToInsert := &dao.TimelineEventInput{
+					ClientId:    uuid.NewString(),
+					TestCaseId:  testCaseIdMap[stc.Id],
+					Team:        te.Team,
+					Description: te.ManualDescription, // I _think_ I can just write this. If there is nothing there, then this becomes an omit empty
+					Type:        te.Type,
+					CreateTime:  time.UnixMilli(int64(te.CreateTime)),
+					Designation: te.Designation,
+					//ToolOutcomeChange: dao.ToolOutcomeChangeEventInput{
+					//	OutcomeId: te.ToolOutcomeChange.OutcomeId,
+					//	ToolId:    toolMap[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Name].Id,
+					//},
+				}
+
+				if strings.EqualFold(te.Type, "Manual") {
+					teToInsert.ManualEvent = &dao.ManualTimelineEventInput{
+						Placeholder: true,
+					}
+				} else if strings.EqualFold(te.Type, "FieldChange") {
+					switch {
+					case strings.EqualFold(te.FieldName, "status"):
+						status, ok := outcomeStatusMap[te.FieldAction]
+						if !ok {
+							slog.WarnContext(ctx, "unrecognized status in status field-change event, passing it through as-is (forwards compat)",
+								"assessment-name", assessmentName,
+								"campaign_name", c.Name,
+								"source-test-case-id", stc.Id,
+								"source-test-case-name", stc.Name,
+								"timeline-event-id", te.Id,
+								"status", te.FieldAction)
+							status = dao.TestCaseStatus(te.FieldAction)
+						}
+						teToInsert.StatusChange = &dao.StatusChangeEventInput{
+							Status: status,
+						}
+					case strings.EqualFold(te.FieldName, "outcomeId"):
+						teToInsert.OutcomeChange = &dao.OutcomeChangeEventInput{
+							OutcomeId: te.FieldAction,
+						}
+						if te.ToolOutcomeChange != nil {
+							teToInsert.ToolOutcomeChange = &dao.ToolOutcomeChangeEventInput{
+								OutcomeId: te.ToolOutcomeChange.OutcomeId,
+								ToolId:    toolMap[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Name].Id,
+							}
+						}
+					case strings.EqualFold(te.FieldName, "toolOutcome"):
+						if te.ToolOutcomeChange == nil {
+							slog.ErrorContext(ctx, "toolOutcome field change event is missing its ToolOutcomeChange payload",
+								"assessment-name", assessmentName,
+								"campaign_name", c.Name,
+								"source-test-case-id", stc.Id,
+								"source-test-case-name", stc.Name,
+								"timeline-event-id", te.Id)
+							return fmt.Errorf("timeline event for test case %s has field-name toolOutcome but no ToolOutcomeChange data", stc.Id)
+						}
+						teToInsert.ToolOutcomeChange = &dao.ToolOutcomeChangeEventInput{
+							OutcomeId: te.ToolOutcomeChange.OutcomeId,
+							ToolId:    toolMap[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Name].Id,
+						}
+					default:
+						slog.WarnContext(ctx, "unrecognized field change field name, skipping (forwards compat)", "assessment-name", assessmentName, "field-name", te.FieldName)
+					}
+				} else {
+					slog.WarnContext(ctx, "unrecognized timeline event type, skipping (forwards compat)", "assessment-name", assessmentName, "event-type", te.Type)
+				}
+				slog.DebugContext(ctx, "Prepared timeline event",
+					"assessment-name", assessmentName,
+					"campaign_name", c.Name,
+					"source-test-case-id", stc.Id,
+					"test-case-id", teToInsert.TestCaseId,
+					"event-type", te.Type,
+					"event", teToInsert)
+				timelineEventInsert.Events = append(timelineEventInsert.Events, *teToInsert)
+			}
+		}
+		respTimelineResponse, err := dao.CreateTimelineEvents(ctx, client, *timelineEventInsert)
+		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+			}
+			return fmt.Errorf("could not write timeline events for %s, campaign: %s; check vectr version: %w", assessmentName, c.Name, err)
+		}
+		// this is a way to check if errors happened as well
+		if respTimelineResponse.TimelineEvent.Create.Summary.Failed > 0 {
+			for _, errmsg := range respTimelineResponse.TimelineEvent.Create.Items {
+				if len(errmsg.Errors) > 0 {
+					for _, te := range timelineEventInsert.Events {
+						if strings.EqualFold(errmsg.ClientId, te.ClientId) {
+							slog.WarnContext(ctx, "failed to create timeline event",
+								"assessment-name", assessmentName,
+								"campaign_name", c.Name,
+								"client-id", te.ClientId,
+								"test-case-id", te.TestCaseId,
+								"event", te,
+								"errors", errmsg.Errors)
+							break
+						}
+
+					}
+				}
+			}
+			return fmt.Errorf("could not write timeline events for %s, campaign: %s; %d", assessmentName, c.Name, respTimelineResponse.TimelineEvent.Create.Summary.Failed)
 		}
 	}
 	slog.InfoContext(ctx, "Test cases created", "assessment-name", assessmentName, "test-case-count", testCaseCount)
@@ -660,8 +778,13 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	}
 
 	if optionalParams.AssessmentName != "" {
-		slog.DebugContext(ctx, "overiding assessment name", "old-assessment-name", ad.Assessment.Name, "new-assessment-name", optionalParams.AssessmentName)
+		newGlobalId, err := uuid.NewRandom()
+		if err != nil {
+			return fmt.Errorf("when re-writing global id (for new assessment-name) could not generate uuid: %w", err)
+		}
+		slog.DebugContext(ctx, "overiding assessment name", "old-assessment-name", ad.Assessment.Name, "new-assessment-name", optionalParams.AssessmentName, "old-global-id", ad.Assessment.GlobalId, "new-global-id", newGlobalId.String())
 		ad.Assessment.Name = optionalParams.AssessmentName
+		//ad.Assessment.GlobalId = newGlobalId.String()
 	}
 
 	lookup_assessments, err := dao.FindExistingAssessment(ctx, client, db, ad.Assessment.Name)

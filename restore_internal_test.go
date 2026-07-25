@@ -20,10 +20,7 @@ func TestGroupedCreateTestCaseWithLibraryIdInput_Batching(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		numLibraryIds := rapid.IntRange(1, 6).Draw(t, "numLibraryIds")
 
-		g := NewGroupedCreateTestCaseWithLibraryIdInput(dao.CreateTestCaseMatchByLibraryIdInput{
-			Db:         "test-db",
-			CampaignId: "campaign-1",
-		})
+		g := NewGroupedCreateTestCaseWithLibraryIdInput("test-db", "campaign-1")
 
 		maxGroupSize := 0
 		total := 0
@@ -105,10 +102,7 @@ func TestGroupedCreateTestCaseWithLibraryIdInput_ResolveByLibraryIdIsOrderIndepe
 	rapid.Check(t, func(t *rapid.T) {
 		n := rapid.IntRange(1, 8).Draw(t, "n")
 
-		g := NewGroupedCreateTestCaseWithLibraryIdInput(dao.CreateTestCaseMatchByLibraryIdInput{
-			Db:         "test-db",
-			CampaignId: "campaign-1",
-		})
+		g := NewGroupedCreateTestCaseWithLibraryIdInput("test-db", "campaign-1")
 
 		type resultItem struct {
 			libId string

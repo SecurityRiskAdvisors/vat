@@ -197,6 +197,7 @@ query GetAllAssessments($db: String!, $assessmentName: String!) {
           }
           detectionGuidance
           preventionGuidance
+          # @genqlient(pointer: true)
           detectionTime {
             id
             team
@@ -220,6 +221,7 @@ query GetAllAssessments($db: String!, $assessmentName: String!) {
             createTime
             updateTime
           }
+          # @genqlient(pointer: true)
           attackStop {
             id
             team
@@ -243,6 +245,7 @@ query GetAllAssessments($db: String!, $assessmentName: String!) {
             createTime
             updateTime
           }
+          # @genqlient(pointer: true)
           attackStart {
             id
             team
@@ -266,6 +269,7 @@ query GetAllAssessments($db: String!, $assessmentName: String!) {
             createTime
             updateTime
           }
+          # @genqlient(pointer: true)
           completeTime {
             id
             team
@@ -297,6 +301,7 @@ query GetAllAssessments($db: String!, $assessmentName: String!) {
             createTime
             updateTime
           }
+          # @genqlient(pointer: true)
           timelineEvents {
             id
             team
@@ -314,6 +319,7 @@ query GetAllAssessments($db: String!, $assessmentName: String!) {
             }
             createTime
             updateTime
+            # @genqlient(pointer: true)
             toolOutcomeChange {
               defenseToolId
               outcomeId
