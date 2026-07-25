@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -110,11 +111,16 @@ var transferCmd = &cobra.Command{
 				OverrideAssessmentTemplate: overrideAssessmentTemplate,
 				DeleteOnFailure:            deleteOnFailure,
 				ForceEnvOnly:               forceEnvOnly,
+				ResetGlobalId:              resetGlobalId,
 			}
 			// Original full assessment transfer logic
 			slog.InfoContext(targetVersionContext, "Transferring assessment data to target instance", "hostname", targetHostname, "db", targetDB)
 			if err := vat.RestoreAssessment(targetVersionContext, targetClient, targetDB, assessmentData, optionalParams); err != nil {
-				slog.ErrorContext(targetVersionContext, "Failed to transfer assessment data to target instance", "error", err)
+				if errors.Is(err, vat.ErrDuplicateGlobalId) {
+					slog.ErrorContext(targetVersionContext, "Failed to transfer assessment data to target instance: this assessment already exists in the target instance under its original globalId, retry with --reset-id to land it as an independent copy", "error", err)
+				} else {
+					slog.ErrorContext(targetVersionContext, "Failed to transfer assessment data to target instance", "error", err)
+				}
 				os.Exit(1)
 			}
 		} else {
@@ -154,6 +160,7 @@ func init() {
 	transferCmd.Flags().BoolVar(&deleteOnFailure, "delete-on-failure", false, "In the case of a failure, delete the created assessment from VECTR (does not delete template information). Does not affect single campaign inserts.")
 	transferCmd.Flags().StringVar(&sourceCampaignName, "source-campaign-name", "", "Name of a specific campaign to transfer. If set, --target-assessment-name must be an existing assessment.")
 	transferCmd.Flags().BoolVar(&forceEnvOnly, "force-env-only", false, "Ignore any templates associated with test cases, import them in the env only (DANGEROUS)")
+	transferCmd.Flags().BoolVar(&resetGlobalId, "reset-id", false, "Mint a new globalId for the transferred assessment instead of reusing the source one. Use this if VECTR rejects the transfer with a duplicate globalId error (i.e. the target instance already has a copy of this assessment).")
 
 	// Mark flags as required
 	transferCmd.MarkFlagRequired("source-hostname")

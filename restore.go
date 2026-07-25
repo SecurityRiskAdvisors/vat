@@ -22,6 +22,13 @@ type RestoreOptionalParams struct {
 	OverrideAssessmentTemplate bool   // Flag to override using the use of the existing template assessment. Directly import the tests instead (lower fidelty)
 	DeleteOnFailure            bool   // Flag to delete assessments if the campaign import failed
 	ForceEnvOnly               bool   // FLag to ignore template test cases even if one exists in the source
+	// ResetGlobalId mints a new globalId for the assessment being restored
+	// instead of reusing the one from the serialized data. VECTR rejects an
+	// assessment create when its globalId already exists in the target
+	// instance, which happens when the same source assessment is restored
+	// into an instance that already holds a copy of it (e.g. under a
+	// different name) -- set this to land it as an independent copy.
+	ResetGlobalId bool
 }
 
 var ErrOrgNotFound = fmt.Errorf("could not find org(s)")
@@ -30,6 +37,7 @@ var ErrMissingLibraryAssessment = fmt.Errorf("missing library assessment")
 var ErrInvalidAssessmentName = fmt.Errorf("assessment name override is invalid (blank?)")
 var ErrAssessmentAlreadyExists = fmt.Errorf("assessment already exists")
 var ErrCampaignNotFound = fmt.Errorf("campaign not found")
+var ErrDuplicateGlobalId = fmt.Errorf("assessment globalId already exists in target instance, retry with --reset-id")
 
 // executorMap maps automation executor types (e.g., "powershell") to their corresponding internal representation.
 // The read part of the API does not return an ENUM or fixed type, just a generic string. This maps it back
@@ -778,13 +786,17 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	}
 
 	if optionalParams.AssessmentName != "" {
+		slog.DebugContext(ctx, "overiding assessment name", "old-assessment-name", ad.Assessment.Name, "new-assessment-name", optionalParams.AssessmentName)
+		ad.Assessment.Name = optionalParams.AssessmentName
+	}
+
+	if optionalParams.ResetGlobalId {
 		newGlobalId, err := uuid.NewRandom()
 		if err != nil {
-			return fmt.Errorf("when re-writing global id (for new assessment-name) could not generate uuid: %w", err)
+			return fmt.Errorf("when re-writing global id (--reset-id) could not generate uuid: %w", err)
 		}
-		slog.DebugContext(ctx, "overiding assessment name", "old-assessment-name", ad.Assessment.Name, "new-assessment-name", optionalParams.AssessmentName, "old-global-id", ad.Assessment.GlobalId, "new-global-id", newGlobalId.String())
-		ad.Assessment.Name = optionalParams.AssessmentName
-		//ad.Assessment.GlobalId = newGlobalId.String()
+		slog.DebugContext(ctx, "resetting assessment global id", "assessment-name", ad.Assessment.Name, "old-global-id", ad.Assessment.GlobalId, "new-global-id", newGlobalId.String())
+		ad.Assessment.GlobalId = newGlobalId.String()
 	}
 
 	lookup_assessments, err := dao.FindExistingAssessment(ctx, client, db, ad.Assessment.Name)
@@ -904,6 +916,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
 			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		if isDuplicateGlobalIdError(err) {
+			return fmt.Errorf("could not create assessment container: %s, global-id: %s: %w", assessment.AssessmentData[0].Name, assessment.AssessmentData[0].GlobalId, ErrDuplicateGlobalId)
 		}
 		return fmt.Errorf("could not create assessment container: %s: %w", assessment.AssessmentData[0].Name, err)
 	}

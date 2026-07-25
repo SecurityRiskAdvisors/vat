@@ -3,6 +3,7 @@ package main
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/signal"
@@ -125,11 +126,16 @@ var restoreCmd = &cobra.Command{
 				OverrideAssessmentTemplate: overrideAssessmentTemplate,
 				DeleteOnFailure:            deleteOnFailure,
 				ForceEnvOnly:               forceEnvOnly,
+				ResetGlobalId:              resetGlobalId,
 			}
 
 			// Restore the assessment
 			if err := vat.RestoreAssessment(versionContext, client, db, &assessmentData, optionalParams); err != nil {
-				slog.ErrorContext(versionContext, "Failed to restore assessment", "error", err)
+				if errors.Is(err, vat.ErrDuplicateGlobalId) {
+					slog.ErrorContext(versionContext, "Failed to restore assessment: this assessment already exists in the target instance under its original globalId, retry with --reset-id to land it as an independent copy", "error", err)
+				} else {
+					slog.ErrorContext(versionContext, "Failed to restore assessment", "error", err)
+				}
 				os.Exit(1)
 			}
 			slog.InfoContext(ctx, "Assessment restored successfully")
@@ -164,6 +170,7 @@ func init() {
 	restoreCmd.Flags().BoolVar(&deleteOnFailure, "delete-on-failure", false, "In the case of a failure, delete the created assessment from VECTR (does not delete template information). Does not affect single campaign inserts.")
 	restoreCmd.Flags().StringVar(&sourceCampaignName, "source-campaign-name", "", "Name of a specific campaign to restore from the input file. If set, --target-assessment-name must be an existing assessment.")
 	restoreCmd.Flags().BoolVar(&forceEnvOnly, "force-env-only", false, "Ignore any templates associated with test cases, import them in the env only (DANGEROUS)")
+	restoreCmd.Flags().BoolVar(&resetGlobalId, "reset-id", false, "Mint a new globalId for the restored assessment instead of reusing the source one. Use this if VECTR rejects the restore with a duplicate globalId error (i.e. the target instance already has a copy of this assessment).")
 
 	// Mark flags as required
 	restoreCmd.MarkFlagsOneRequired("db", "env")

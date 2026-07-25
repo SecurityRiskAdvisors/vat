@@ -3,6 +3,7 @@ package vat
 import (
 	_ "embed"
 	"encoding/json"
+	"strings"
 
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -85,4 +86,35 @@ func gqlErrParse(err error) (any, bool) {
 		return nil, false
 	}
 	return a, true
+}
+
+// isDuplicateGlobalIdError reports whether err is the GraphQL validation
+// error VECTR returns when an assessment's globalId already exists in the
+// target instance (this happens when restoring/transferring the same source
+// assessment into an instance that already holds a copy with that globalId,
+// e.g. under a different name). Callers can use this to point the user at
+// RestoreOptionalParams.ResetGlobalId / --reset-id instead of surfacing a raw
+// GraphQL validation error.
+func isDuplicateGlobalIdError(err error) bool {
+	gqlErrs, ok := err.(gqlerror.List)
+	if !ok {
+		return false
+	}
+	for _, e := range gqlErrs {
+		for key, val := range e.Extensions {
+			if !strings.Contains(strings.ToLower(key), "globalid") {
+				continue
+			}
+			msgs, ok := val.([]any)
+			if !ok {
+				continue
+			}
+			for _, m := range msgs {
+				if s, ok := m.(string); ok && strings.Contains(s, "Duplicate globalId") {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
