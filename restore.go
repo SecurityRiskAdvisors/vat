@@ -364,9 +364,10 @@ func restoreCampaigns(
 		// but basically, I need to check if the outcome is in the map
 		// if it is not, throw an error
 		for _, serialized_tc := range c.TestCases {
-			if _, ok := outcomeStatusMap[serialized_tc.Status]; !ok {
-				slog.ErrorContext(ctx, "could not find outcome for this test case", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name, "campaign-id", c.Id, "test-case-id", serialized_tc.Id)
-				return fmt.Errorf("outcome %s not found", serialized_tc.Status)
+			status, ok := outcomeStatusMap[serialized_tc.Status]
+			if !ok {
+				slog.WarnContext(ctx, "could not find outcome for this test case, passing it through as-is (forwards compat)", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name, "campaign-id", c.Id, "test-case-id", serialized_tc.Id)
+				status = dao.TestCaseStatus(serialized_tc.Status)
 			}
 			timelineEntriesCount += len(serialized_tc.TimelineEvents)
 			testCaseData := dao.CreateTestCaseDataInput{
@@ -375,7 +376,7 @@ func restoreCampaigns(
 				Phase:            serialized_tc.Phase.Name,
 				Technique:        serialized_tc.MitreId,
 				Organization:     serialized_tc.Organizations[0].Name,
-				Status:           outcomeStatusMap[serialized_tc.Status],
+				Status:           status,
 				DetectionSteps:   serialized_tc.DetectionGuidance,
 				PreventionSteps:  serialized_tc.PreventionGuidance,
 				OutcomePath:      serialized_tc.Outcome.Path,
@@ -1103,14 +1104,25 @@ func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcas
 }
 
 func buildAttackAutomationInput[A AutomationArgumentTypes, PA pointerAutomationArgs[A], T Automator[A]](automator T) (*dao.AttackAutomationInput, []error) {
+	errors := make([]error, 0, len(automator.GetAutomationArgument()))
+
+	executor, ok := executorMap[automator.GetAutomationExecutor()]
+	if !ok {
+		errors = append(errors, fmt.Errorf("cmd: %s, unrecognized executor: %s, passing it through as-is (forwards compat)", automator.GetAutomationCmd(), automator.GetAutomationExecutor()))
+		executor = dao.AttackAutomationExecutor(automator.GetAutomationExecutor())
+	}
+	cleanupExecutor, ok := executorMap[automator.GetAutomationCleanupExecutor()]
+	if !ok {
+		errors = append(errors, fmt.Errorf("cmd: %s, unrecognized cleanup executor: %s, passing it through as-is (forwards compat)", automator.GetAutomationCmd(), automator.GetAutomationCleanupExecutor()))
+		cleanupExecutor = dao.AttackAutomationExecutor(automator.GetAutomationCleanupExecutor())
+	}
 	attackAutomation := &dao.AttackAutomationInput{
 		Command:         automator.GetAutomationCmd(),
-		Executor:        executorMap[automator.GetAutomationExecutor()],
+		Executor:        executor,
 		CleanupCommand:  automator.GetAutomationCleanup(),
-		CleanupExecutor: executorMap[automator.GetAutomationCleanupExecutor()],
+		CleanupExecutor: cleanupExecutor,
 	}
 	args := automator.GetAutomationArgument()
-	errors := make([]error, 0, len(args))
 	for _, autoArg := range args {
 		pointerAutoArg := PA(&autoArg)
 		// set the default type to be a string, if it is set to path we will use that, else use the string

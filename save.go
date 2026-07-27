@@ -173,6 +173,13 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 		for _, retrived_library_cases := range r.LibraryTestcasesByIds.Nodes {
 			data.LibraryTestCases[retrived_library_cases.LibraryTestCaseId] = retrived_library_cases
 		}
+		// Note: any id placeholdered above (line ~156) that GetLibraryTestCases
+		// doesn't return a node for stays as that zero-value placeholder in
+		// data.LibraryTestCases -- an empty/ghost entry would silently persist
+		// into the save file. Not currently reachable (these ids come from the
+		// same live assessment being saved), but if that ever changes, this is
+		// the place to reconcile ids against len(r.LibraryTestcasesByIds.Nodes)
+		// and warn/error on any that didn't come back.
 	}
 
 	slog.DebugContext(ctx, "Fetching defense tools",

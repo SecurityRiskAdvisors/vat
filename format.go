@@ -54,7 +54,10 @@ const (
 	ResourceRequired ResourceRequirement = true
 	// ResourceOptional means the resource may be entirely absent from a
 	// file; downstream flow (e.g. restore.go) is expected to check for its
-	// absence (e.g. an empty LibraryTestCases map) and adjust accordingly.
+	// absence and adjust accordingly. None of the resources registered
+	// below are optional today — this exists for a future resource (e.g.
+	// RTA, see FormatVersion's doc comment) that a decoder could legitimately
+	// not find in an older file.
 	ResourceOptional ResourceRequirement = false
 )
 
