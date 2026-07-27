@@ -2,6 +2,7 @@
 # @genqlient(for: "CreateTestCaseDataInput.userContext", omitempty: true)
 # @genqlient(for: "CreateTestCaseDataInput.attackAutomation", omitempty: true, pointer:true)
 # @genqlient(for: "CreateTestCaseDataInput.redTools", omitempty: true)
+# @genqlient(for: "CreateTestCaseDataInput.clientId", omitempty: true)
 # @genqlient(for: "RedToolInput.vendor", omitempty: true, pointer:true)
 # @genqlient(for: "DefenseToolInput.vendor", omitempty: true, pointer:true)
 mutation CreateTestCasesNoTemplate(
@@ -9,9 +10,12 @@ mutation CreateTestCasesNoTemplate(
     ) {
   testCase {
     createWithoutTemplate(input: $input) {
-      testCases {
-        id
-        name
+      testCaseCreateItems {
+        clientId
+        testCase {
+          id
+          name
+        }
       }
     }
   }

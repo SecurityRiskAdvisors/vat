@@ -39,6 +39,7 @@ input CreateTestCaseDataInput (used in: CreateTestCases, CreateTestCasesByLibrar
   attackStop: Float
   attackSuccess: AttackSuccessState
   blueTeamMetadata: [MetadataKeyValuePairInput!]
+  clientId: String
   dataVer: Int
   defenseToolOutcomes: [DefenseToolOutcomeInput!]
   defenses: [String!]
@@ -103,21 +104,45 @@ input CreateTestCaseWithoutTemplateInput (used in: CreateTestCasesNoTemplate)
   db: String!
   suppressAutoTimelineEvents: Boolean
   testCaseData: [CreateTestCaseDataInput!]!
+input CreateTimelineEventsInput (used in: CreateTimelineEvents)
+  db: String!
+  events: [TimelineEventInput!]!
 input DefenseToolInput (used in: CreateTestCases, CreateTestCasesByLibraryId, CreateTestCasesNoTemplate)
   name: String!
   vendor: String
 input DefenseToolOutcomeInput (used in: CreateTestCases, CreateTestCasesByLibraryId, CreateTestCasesNoTemplate)
   defenseToolId: String!
   outcomeId: String!
+input ManualTimelineEventInput (used in: CreateTimelineEvents)
+  placeholder: Boolean
 input MetadataKeyValuePairInput (used in: CreateAssessment, CreateCampaigns, CreateTemplateTestCases, CreateTestCases, CreateTestCasesByLibraryId, CreateTestCasesNoTemplate)
   key: String!
   value: String!
+input OutcomeChangeEventInput (used in: CreateTimelineEvents)
+  outcomeId: String!
 input RedToolInput (used in: CreateTemplateTestCases, CreateTestCases, CreateTestCasesByLibraryId, CreateTestCasesNoTemplate)
   name: String!
   vendor: String
+input StatusChangeEventInput (used in: CreateTimelineEvents)
+  status: TestCaseStatus!
 input TemplateNamePrefixInput (used in: CreateTestCases)
   templateName: String!
   templatePrefix: String
+input TimelineEventInput (used in: CreateTimelineEvents)
+  clientId: String
+  createTime: DateTime!
+  description: String
+  designation: TimelineDesignation
+  manualEvent: ManualTimelineEventInput
+  outcomeChange: OutcomeChangeEventInput
+  statusChange: StatusChangeEventInput
+  team: String
+  testCaseId: String!
+  toolOutcomeChange: ToolOutcomeChangeEventInput
+  type: String!
+input ToolOutcomeChangeEventInput (used in: CreateTimelineEvents)
+  outcomeId: String!
+  toolId: String!
 output AppUser (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetLibraryTestCases)
   createdAt: String
   id: String
@@ -235,7 +260,11 @@ output CreateAssessmentPayload (used in: CreateAssessment)
 output CreateCampaignPayload (used in: CreateCampaigns)
   campaigns: [Campaign]
 output CreateTestCasePayload (used in: CreateTemplateTestCases, CreateTestCases, CreateTestCasesByLibraryId, CreateTestCasesNoTemplate)
+  testCaseCreateItems: [TestCaseCreateItem]
   testCases: [TestCase]
+output CreateTimelineEventsPayload (used in: CreateTimelineEvents)
+  items: [TimelineEventCreateItem!]!
+  summary: TimelineEventBatchSummary!
 output Database (used in: GetAllDatabases)
   id: Int
   name: String
@@ -468,6 +497,21 @@ output TimelineEvent (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetL
   toolOutcomeChange: DefenseToolOutcome
   type: String
   updateTime: Float
+output TimelineEventBatchSummary (used in: CreateTimelineEvents)
+  failed: Int!
+  succeeded: Int!
+  total: Int!
+output TimelineEventCreateItem (used in: CreateTimelineEvents)
+  clientId: String!
+  errors: [TimelineEventInsertError!]
+  replacedTimelineEventId: String
+  timelineEvent: TimelineEvent
+output TimelineEventInsertError (used in: CreateTimelineEvents)
+  code: TimelineEventErrorCode!
+  field: String
+  message: String!
+output TimelineEventMutations (used in: CreateTimelineEvents)
+  create: CreateTimelineEventsPayload
 output UnstructuredLog (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetLibraryTestCases)
   content: String
   createTime: Float

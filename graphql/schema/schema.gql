@@ -718,6 +718,13 @@ input CreateTestCaseAndTemplateMatchByNameInput {
 }
 
 input CreateTestCaseDataInput {
+  """
+  Correlation token, used to match this item to its result in the payload's
+  testCaseCreateItems list. Optional - if omitted (or empty), the server generates one and
+  returns it on the corresponding TestCaseCreateItem. If supplied, must be unique within the
+  request.
+  """
+  clientId: String
   name: String!
 
   """
@@ -819,6 +826,15 @@ input CreateTestCaseMatchByLibraryIdInput {
 
 type CreateTestCasePayload {
   testCases: [TestCase]
+
+  """
+  Populated only by createWithoutTemplate, createWithTemplateMatchByName, and
+  createWithTemplateMatchByLibraryId - one item per submitted testCaseData entry, in submission
+  order, each carrying back its (caller-supplied or server-generated) clientId. Null for the
+  other mutations returning this payload (createTemplate, cloneTemplate,
+  createTemplateFromEnvTestCase).
+  """
+  testCaseCreateItems: [TestCaseCreateItem]
 }
 
 input CreateTestCaseTemplateDataInput {
@@ -2690,6 +2706,11 @@ type TestCaseConnection {
   pageInfo: PageInfo
 }
 
+type TestCaseCreateItem {
+  clientId: String!
+  testCase: TestCase
+}
+
 input TestCaseFilter {
   name: StringOperator
   description: StringOperator
@@ -2888,6 +2909,7 @@ enum TimelineEventErrorCode {
   INVALID_TEAM
   INVALID_TYPE
   MISSING_EVENT_VARIANT
+  CONFLICTING_OUTCOME_IDS
   DUPLICATE_IN_BATCH
   VALIDATION_ERROR
   DUPLICATE_DESIGNATION_IN_BATCH
@@ -2914,7 +2936,13 @@ input TimelineEventInput {
   statusChange: StatusChangeEventInput
 
   """
-  Exactly one of manualEvent, outcomeChange, toolOutcomeChange, or statusChange is required.
+  Exactly one of manualEvent, statusChange, or (outcomeChange and/or toolOutcomeChange) is
+  required. outcomeChange and toolOutcomeChange may both be set on the same event to record a
+  tool outcome change that also updates the test case's own outcome. In that case, their
+  outcomeId values must match, since they represent a single outcome value attributed to both
+  the test case and the tool. This occurs in the UI when a user sets a tool outcome to something
+  like Alerted - High when the Test Case has no outcome. That action will also set the Test
+  Case outcome to Alerted - High.
   Optional: tags this event as the test case's attackStart/attackStop/detectionTime/completeTime
   event. Restricted by team (ATTACK_START/ATTACK_STOP require Red, DETECTION_TIME requires
   Blue, COMPLETE_TIME requires Blue or Neutral) and at most one event per testCaseId per
