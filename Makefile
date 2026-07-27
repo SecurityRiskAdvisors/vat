@@ -11,7 +11,7 @@
 
  # Default target
  .PHONY: all
- all: clean get-tools deps generate serializedschemavalidator build
+ all: clean get-tools deps generate schema-snapshot serializedschemavalidator build
  
  # Target to create a release for the build
  .PHONY: release
@@ -189,7 +189,7 @@ schema-diff:
 .PHONY: schema-snapshot
 schema-snapshot:
 	@echo "Generating schema type snapshot..."
-	@go run ./_buildcode/schemavalidate/main.go --snapshot | tee schematypes.txt
+	@go run ./_buildcode/schemavalidate/main.go --snapshot > schematypes.txt
 	@echo "Completed. Check git diff schematypes.txt to review changes."
 
 .PHONY: create-draft-release

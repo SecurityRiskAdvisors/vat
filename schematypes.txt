@@ -470,6 +470,9 @@ output TestCase (used in: CreateTemplateTestCases, CreateTestCases, CreateTestCa
 output TestCaseConnection (used in: GetLibraryTestCases, GetTestCaseforDb)
   nodes: [TestCase]
   pageInfo: PageInfo
+output TestCaseCreateItem (used in: CreateTestCasesByLibraryId, CreateTestCasesNoTemplate)
+  clientId: String!
+  testCase: TestCase
 output TestCaseMutations (used in: CreateTemplateTestCases, CreateTestCases, CreateTestCasesByLibraryId, CreateTestCasesNoTemplate)
   addAttackLogProcedure: AddAttackLogToTestCasePayload
   cloneTemplate: CreateTestCasePayload
