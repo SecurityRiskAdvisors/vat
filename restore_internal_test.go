@@ -1,13 +1,95 @@
 package vat
 
 import (
+	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"sra/vat/internal/dao"
 
+	"github.com/Khan/genqlient/graphql"
 	"pgregory.net/rapid"
 )
+
+// stubGraphQLClient is a minimal graphql.Client that returns a fixed,
+// zero-value response for a known set of operation names and errors for
+// anything else -- enough to drive restoreCampaigns up to the point under
+// test without needing a full mutation-response mock.
+type stubGraphQLClient struct {
+	ops map[string]bool
+}
+
+func (s *stubGraphQLClient) MakeRequest(_ context.Context, req *graphql.Request, resp *graphql.Response) error {
+	if !s.ops[req.OpName] {
+		return fmt.Errorf("stubGraphQLClient: no stubbed response for operation %q", req.OpName)
+	}
+	return nil
+}
+
+// TestRestoreCampaigns_TestCaseMissingOrganization verifies vat's policy that
+// OrgMap is a resource vat itself manages and requires: a test case with no
+// organization must fail restoreCampaigns fast with a clear error, rather
+// than being silently restored with a blank organization and left for VECTR
+// to reject downstream.
+func TestRestoreCampaigns_TestCaseMissingOrganization(t *testing.T) {
+	client := &stubGraphQLClient{ops: map[string]bool{"CreateCampaigns": true}}
+
+	campaignsToRestore := []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign{
+		{
+			Name: "campaign-1",
+			TestCases: []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaignTestCasesTestCase{
+				{
+					Id:            "tc-1",
+					Name:          "test case with no organization",
+					Organizations: nil,
+				},
+			},
+		},
+	}
+
+	err := restoreCampaigns(
+		context.Background(),
+		client,
+		"test-db",
+		"assessment-1",
+		"assessment-name",
+		campaignsToRestore,
+		map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization{},
+		map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool{},
+		map[string]GenericBlueTool{},
+		&RestoreOptionalParams{},
+	)
+	if err == nil {
+		t.Fatal("expected an error for a test case with no organization, got nil")
+	}
+	if !strings.Contains(err.Error(), "tc-1") {
+		t.Errorf("expected error to identify the offending test case (tc-1), got: %v", err)
+	}
+}
+
+// TestCreateTemplateData_MissingOrganization verifies the same policy for
+// the library-test-case-template path: createTemplateData must return a
+// fatal error for a test case with no organization, not silently produce a
+// template with a blank organization.
+func TestCreateTemplateData_MissingOrganization(t *testing.T) {
+	template_test_case := dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase{
+		Name:              "template test case with no organization",
+		LibraryTestCaseId: "lib-1",
+		Organizations:     nil,
+	}
+
+	_, warnings, err := createTemplateData(template_test_case)
+	if err == nil {
+		t.Fatal("expected a fatal error for a template test case with no organization, got nil")
+	}
+	if !strings.Contains(err.Error(), "lib-1") {
+		t.Errorf("expected error to identify the offending library test case (lib-1), got: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no recoverable warnings alongside the fatal error, got: %v", warnings)
+	}
+}
 
 // TestGroupedCreateTestCaseWithLibraryIdInput_Batching is a property test:
 // for any assignment of source test cases to library test case IDs (with

@@ -370,12 +370,23 @@ func restoreCampaigns(
 				status = dao.TestCaseStatus(serialized_tc.Status)
 			}
 			timelineEntriesCount += len(serialized_tc.TimelineEvents)
+			// OrgMap is a resource vat itself manages and requires -- every test
+			// case must carry an organization. Confirmed against a live instance
+			// that VECTR rejects a create with a blank organization, but we don't
+			// defer to that: a missing org here means our own data is
+			// inconsistent, so fail fast with a clear error instead of letting
+			// VECTR reject it downstream with a less useful message.
+			if len(serialized_tc.Organizations) == 0 {
+				slog.ErrorContext(ctx, "test case has no organization set", "test-case", serialized_tc.Name, "campaign", c.Name, "campaign-id", c.Id, "test-case-id", serialized_tc.Id)
+				return fmt.Errorf("test case %s (campaign %s) has no organization set", serialized_tc.Id, c.Name)
+			}
+			organization := serialized_tc.Organizations[0].Name
 			testCaseData := dao.CreateTestCaseDataInput{
 				Name:             serialized_tc.Name,
 				Description:      serialized_tc.Description,
 				Phase:            serialized_tc.Phase.Name,
 				Technique:        serialized_tc.MitreId,
-				Organization:     serialized_tc.Organizations[0].Name,
+				Organization:     organization,
 				Status:           status,
 				DetectionSteps:   serialized_tc.DetectionGuidance,
 				PreventionSteps:  serialized_tc.PreventionGuidance,
@@ -825,7 +836,18 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			if len(ad.LibraryTestCases) > 0 {
 				for _, template_test_case := range ad.LibraryTestCases {
 					slog.DebugContext(ctx, "library test case", "name", template_test_case.Name, "template_id", template_test_case.LibraryTestCaseId)
-					tctd, errors := createTemplateData(template_test_case)
+					tctd, errors, err := createTemplateData(template_test_case)
+					if err != nil {
+						slog.ErrorContext(ctx, "could not build template test case data",
+							"test-case-id", template_test_case.Id,
+							"test-case-library-id", template_test_case.LibraryTestCaseId,
+							"test-case-name", template_test_case.Name,
+							"assessment-name", ad.Assessment.Name,
+							"db", db,
+							"err", err,
+						)
+						return err
+					}
 					if len(errors) > 0 {
 						for _, err := range errors {
 							slog.WarnContext(ctx, "parsing discrepencies found, they were recovered but review if needed",
@@ -1050,7 +1072,15 @@ func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNo
 	return md
 }
 
-func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase) (dao.CreateTestCaseTemplateDataInput, []error) {
+// createTemplateData builds a CreateTestCaseTemplateDataInput from a library
+// test case. The returned []error is recoverable parsing discrepancies the
+// caller can log and continue past; the returned error is fatal -- OrgMap is
+// a resource vat itself manages and requires, so a missing organization here
+// means our own data is inconsistent, not something to paper over.
+func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase) (dao.CreateTestCaseTemplateDataInput, []error, error) {
+	if len(template_test_case.Organizations) == 0 {
+		return dao.CreateTestCaseTemplateDataInput{}, nil, fmt.Errorf("test case %s (library id %s) has no organization set", template_test_case.Name, template_test_case.LibraryTestCaseId)
+	}
 	var errors []error
 	ttc := dao.CreateTestCaseTemplateDataInput{
 		LibraryTestCaseId: template_test_case.LibraryTestCaseId,
@@ -1100,7 +1130,7 @@ func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcas
 			break
 		}
 	}
-	return ttc, errors
+	return ttc, errors, nil
 }
 
 func buildAttackAutomationInput[A AutomationArgumentTypes, PA pointerAutomationArgs[A], T Automator[A]](automator T) (*dao.AttackAutomationInput, []error) {
