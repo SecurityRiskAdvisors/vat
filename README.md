@@ -2,7 +2,13 @@
 
 This repository provides a CLI tool for saving, restoring, dumping, and transferring assessments, campaigns, and test cases from a VECTR instance. The tool interacts with the VECTR GraphQL API to manage assessment data.
 
+> **📢 vat 2.0 is a hard breaking change.** vat 2.0 introduces a new envelope/manifest
+> file format (manifest version `2`). It cannot read files saved by vat 1.x, and vat 1.x
+> cannot read files saved by vat 2.0 — there is no auto-upgrade path. See
+> [Upgrading from vat 1.x](#upgrading-from-vat-1x) below.
+
 - [VECTR Assessment Transfer](#vectr-assessment-transfer)
+  - [Upgrading from vat 1.x](#upgrading-from-vat-1x)
   - [How to Run](#how-to-run)
     - [Downloading the Binary](#downloading-the-binary)
     - [Supported VECTR Versions](#supported-vectr-versions)
@@ -30,6 +36,8 @@ This repository provides a CLI tool for saving, restoring, dumping, and transfer
       - [Optional Options](#optional-options-3)
     - [Restoring or Transferring a Single Campaign](#restoring-or-transferring-a-single-campaign)
       - [Example using `restore`](#example-using-restore)
+    - [Recovering from a Duplicate Assessment ID](#recovering-from-a-duplicate-assessment-id)
+    - [Defense Tool Reconciliation](#defense-tool-reconciliation)
     - [Force Environment Only Import](#force-environment-only-import)
     - [Diagnostic Command](#diagnostic-command)
       - [Minimal Example](#minimal-example-4)
@@ -44,6 +52,32 @@ This repository provides a CLI tool for saving, restoring, dumping, and transfer
     - [Run Tests](#run-tests)
   - [Project Structure](#project-structure)
 
+
+## Upgrading from vat 1.x
+
+vat 2.0 changed the on-disk file format (the JSON inside the encrypted archive
+is now an envelope with a `manifest` and versioned `data`, instead of the flat
+structure vat 1.x used — see [ARCHITECTURE.md](ARCHITECTURE.md) for details).
+This is a **hard, one-way break**: vat 2.0 will refuse to decode any file saved
+by vat 1.x, and vat 1.x cannot read files saved by vat 2.0. There is no
+in-place conversion.
+
+Going forward, every vat 2.x release commits to reading manifest version `2`
+files, so files saved with any vat 2.0+ build will keep working across future
+2.x releases — this break happens once, at the 1.x → 2.0 boundary, not again
+within the 2.x line.
+
+To move existing vat 1.x archives forward:
+
+1. Keep (or reinstall) a vat 1.x binary, and use it to `restore` your existing
+   `.vat` archives into a VECTR instance running a VECTR version compatible
+   with vat 1.x.
+2. Once that data lives in VECTR again, use vat 2.0 to `save`/`dump` it back
+   out. The resulting files will be in the new vat 2.0 envelope format and can
+   be restored with vat 2.0 going forward.
+
+There is no supported path for vat 2.0 to read a vat 1.x archive directly —
+the archive has to pass back through a live VECTR instance first.
 
 ## How to Run
 
@@ -106,7 +140,11 @@ Save assessment data from a VECTR instance to an encrypted, compressed file:
 
 ### Restore Assessment Data
 
-Restore assessment data to a VECTR instance from an encrypted, compressed file:
+Restore assessment data to a VECTR instance from an encrypted, compressed file.
+This includes each campaign's timeline events, which are recreated in the
+target instance alongside the assessment and test case data. If some events
+fail to create, `vat` reports how many failed per campaign; use
+[Debug Mode](#debug-mode) to see which events failed and why.
 
 #### Minimal Example
 ```bash
@@ -129,6 +167,7 @@ Restore assessment data to a VECTR instance from an encrypted, compressed file:
 - `--override-template-assessment`: Overrides any set template name in the serialized data and loads template test cases anyway.
 - `--delete-on-failure`: In the case of a failure, delete the created assessment from VECTR. (Note: this does not affect single campaign transfers)
 - `--force-env-only`: Ignore any templates associated with test cases and import them as environment-only test cases. This breaks the link to the library template. (DANGEROUS)
+- `--reset-id`: Mint a new globalId for the restored assessment instead of reusing the source one. Use this if VECTR rejects the restore with a duplicate globalId error (i.e. the target instance already has a copy of this assessment).
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
 - `--client-cert-file`: Path to the client certificate file for mTLS.
 - `--client-key-file`: Path to the client key file for mTLS.
@@ -194,6 +233,7 @@ Transfer an assessment from one VECTR instance directly to another:
 - `--override-template-assessment`: Overrides the template assessment set in the serialized data and uses the saved template data (lower fidelity).
 - `--delete-on-failure`: In the case of a failure, delete the created assessment from VECTR. (Note: this does not affect single campaign transfers)
 - `--force-env-only`: Ignore any templates associated with test cases and import them as environment-only test cases. This breaks the link to the library template. (DANGEROUS)
+- `--reset-id`: Mint a new globalId for the transferred assessment instead of reusing the source one. Use this if VECTR rejects the transfer with a duplicate globalId error (i.e. the target instance already has a copy of this assessment).
 - `-k`: Allow insecure connections (e.g., ignore TLS certificate errors). (will be applied for both source and dest)
 - `--client-cert-file`: Path to the client certificate file for mTLS. (will be applied for both source and dest)
 - `--client-key-file`: Path to the client key file for mTLS. (will be applied for both source and dest)
@@ -215,6 +255,41 @@ First, save a full assessment that contains the campaign you want to move. Then,
 ```
 
 A similar approach works for the `transfer` command.
+
+### Recovering from a Duplicate Assessment ID
+
+Every VECTR assessment has a `globalId`. By default, `vat` preserves the source
+assessment's `globalId` when restoring or transferring, so re-running the same
+`restore`/`transfer` against the same target is idempotent rather than
+producing duplicates. If the target instance already has an assessment with
+that `globalId` (for example, you've already restored this assessment once, or
+it originated there), the operation fails with an error telling you to retry
+with `--reset-id`.
+
+Add `--reset-id` and re-run the exact same command to have `vat` mint a new
+`globalId` for the assessment, landing it as an independent copy instead of
+colliding with the existing one:
+
+```bash
+./vat restore --hostname <target-hostname> --env <target-env> --vectr-creds-file <path-to-vectr-creds-file> --input-file assessment.vat --reset-id ...
+```
+
+### Defense Tool Reconciliation
+
+When restoring or transferring an assessment that references defense tools
+(VECTR "BlueTools", e.g. EDR/AV products used in test case outcomes), `vat`
+automatically reconciles them against the target instance instead of
+requiring them to be pre-provisioned. For each defense tool, `vat` reuses a
+matching tool already in the target instance (matched on name, product, and
+active state), extends a close match with any missing defense layers, or
+creates the product, layers, and tool from scratch if nothing matches.
+
+A couple of things worth knowing:
+- If a defense tool's data is incomplete (e.g. a blank name), `vat` fails the
+  restore rather than creating a broken record in VECTR.
+- If more than one matching tool already exists in the target instance, `vat`
+  picks the most recently updated one and logs a warning. Use [Debug Mode](#debug-mode)
+  to see which tool was chosen.
 
 ### Force Environment Only Import
 
@@ -289,7 +364,13 @@ To build the application, run:
 make all
 ```
 
-This will create an executable binary named `vat` in the `dist/` directory.
+This will create an executable binary named `vat` in the `dist/` directory. As
+part of the default build, `make all` also regenerates and validates the
+GraphQL schema snapshot (`schematypes.txt`) via the `schema-snapshot` target.
+The schema validator that powers this (`_buildcode/schemavalidate/`) is its
+own Go module, separate from the main project's `go.mod` — if you're invoking
+it directly with `go run`/`go build` instead of through `make`, pass
+`-modfile=./_buildcode/schemavalidate/go.mod`.
 
 ### Run Tests
 
@@ -314,6 +395,7 @@ make all test
   - `restore.go`: Logic for restoring assessment data.
   - `dump.go`: Logic for dumping assessment data.
   - `vat.go`: Data structures and JSON encoding/decoding.
+  - `format.go`: Encodes/decodes the on-disk envelope/manifest file format (see [ARCHITECTURE.md](ARCHITECTURE.md) for details).
 
 - **`internal/util/`**: Utility functions and client setup:
   - `client.go`: GraphQL client setup and API interactions.
@@ -321,3 +403,5 @@ make all test
 - **`graphql/`**: GraphQL schema and operations.
 
 - **`internal/dao/`**: Data access objects for interacting with the GraphQL API.
+
+- **`_buildcode/schemavalidate/`**: Standalone Go module used by `make schema-snapshot` to generate and validate the GraphQL schema snapshot (`schematypes.txt`).

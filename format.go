@@ -32,7 +32,15 @@ import (
 // every consumer of the field, forever. Fields where "false"/"" and "not
 // present" must be distinguishable need a pointer or an explicit sentinel —
 // don't rely on bare zero values for those.
-const FormatVersion = "1.0"
+//
+// The vat 2.x guarantee: FormatVersion "2" is a stable target for the entire
+// vat 2.x line. Every vat 2.x release commits to reading any file with
+// manifest version "2", by following the compatibility convention above
+// (permissive decoding, additive resources) instead of bumping this constant
+// for routine changes. FormatVersion only moves again alongside a new major
+// vat version, at which point that version gets its own hard break, the same
+// way vat 2.0 broke compatibility with vat 1.x's pre-envelope format.
+const FormatVersion = "2"
 
 // Known resource names.
 const (
