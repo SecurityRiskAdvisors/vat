@@ -11,7 +11,7 @@
 
  # Default target
  .PHONY: all
- all: clean get-tools deps generate serializedschemavalidator build
+ all: clean get-tools deps generate schema-snapshot serializedschemavalidator build
  
  # Target to create a release for the build
  .PHONY: release
@@ -20,7 +20,7 @@
  
 # release-branch tags an input of a tag, it creates a release branch and tags it
  .PHONY: release-branch
- release-branch: clean generate serializedschemavalidator vulncheck test release-checks
+ release-branch: clean generate schema-snapshot serializedschemavalidator vulncheck test release-checks
 	@if [ -z "$(TAG)" ]; then \
 		echo "Error: TAG parameter is required. Usage: make tag TAG=<tag_name>"; \
 		git describe --tags --always --dirty; \

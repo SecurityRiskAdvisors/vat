@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"flag"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -109,6 +110,9 @@ func generateCertsForTest() (caPEM, serverCertPEM, serverKeyPEM, clientCertPEM, 
 }
 
 func main() {
+	vectrVersion := flag.String("vectr-version", "mtls-test", "value returned as currentVersion by the version check endpoint")
+	flag.Parse()
+
 	caPEM, serverCertPEM, serverKeyPEM, clientCertPEM, clientKeyPEM, err := generateCertsForTest()
 	if err != nil {
 		fmt.Printf("Failed to generate certificates: %v\n", err)
@@ -160,7 +164,7 @@ func main() {
 				CurrentVersion string `json:"currentVersion"`
 				Error          string `json:"error"`
 			}{
-				CurrentVersion: "mtls-test",
+				CurrentVersion: *vectrVersion,
 				Error:          "",
 			},
 		}

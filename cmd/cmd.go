@@ -22,6 +22,7 @@ var (
 	tlsParams                  *util.CustomTlsParams
 	sourceCampaignName         string
 	forceEnvOnly               bool
+	ignoreVersionCheck         bool
 )
 
 // RootCmd is the root command for the CLI
@@ -87,6 +88,7 @@ func Execute() {
 	RootCmd.PersistentFlags().StringVar(&clientCertFile, "client-cert-file", "", "Path to the client certificate file")
 	RootCmd.PersistentFlags().StringVar(&clientKeyFile, "client-key-file", "", "Path to the client key file")
 	RootCmd.PersistentFlags().StringSliceVar(&caCertFiles, "ca-cert", []string{}, "Path to a CA certificate file (can be used multiple times)")
+	RootCmd.PersistentFlags().BoolVar(&ignoreVersionCheck, "ignore-version-check", false, "Proceed with a warning when the VECTR version is outside the supported range")
 	slog.Info("vat started", "version", version)
 
 	// Add subcommands

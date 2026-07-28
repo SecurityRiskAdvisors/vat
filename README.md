@@ -5,6 +5,7 @@ This repository provides a CLI tool for saving, restoring, dumping, and transfer
 - [VECTR Assessment Transfer](#vectr-assessment-transfer)
   - [How to Run](#how-to-run)
     - [Downloading the Binary](#downloading-the-binary)
+    - [Supported VECTR Versions](#supported-vectr-versions)
     - [Generating VECTR Credentials](#generating-vectr-credentials)
     - [Connecting to VECTR with TLS](#connecting-to-vectr-with-tls)
       - [Using a Custom CA (`--ca-cert`)](#using-a-custom-ca---ca-cert)
@@ -51,6 +52,10 @@ After building or downloading the binary, you can use the following commands to 
 ### Downloading the Binary
 
 You can download the latest binary from the [release page](https://github.com/SecurityRiskAdvisors/vat/releases). You can always find the latest release [here](https://github.com/SecurityRiskAdvisors/vat/releases/latest).
+
+### Supported VECTR Versions
+
+vat 1.x supports VECTR versions below 9.14; VECTR 9.14 and later require vat 2.x. Commands that connect to a VECTR instance check the live version (at major.minor granularity) and refuse to run against an unsupported one. Pass `--ignore-version-check` to downgrade that failure to a warning and proceed anyway.
 
 ### Generating VECTR Credentials
 
