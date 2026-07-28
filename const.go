@@ -1,6 +1,5 @@
 package vat
 
-const TAGGED_VECTR_VERSION string = "9.12.1"
 const INTROSPECTION_QUERYTYPE string = "Query"
 
 const VERSION VatContextKey = "VAT_VERSION"

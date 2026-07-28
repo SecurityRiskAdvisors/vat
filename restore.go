@@ -990,13 +990,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 
 	// restoreInfo is an artifact of this single restore call — it's never
 	// stored on AssessmentData (see its doc comment), just used here for
-	// the version-mismatch warnings and folded into the target VECTR
+	// the version-mismatch warning and folded into the target VECTR
 	// instance's own metadata below.
 	restoreInfo := NewVatOpMetadata(ctx)
-
-	if restoreInfo.VectrVersion != TAGGED_VECTR_VERSION {
-		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", restoreInfo.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION)
-	}
 
 	if ad.Manifest.VectrVersion != "" && ad.Manifest.VectrVersion != restoreInfo.VectrVersion {
 		slog.WarnContext(ctx, "Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Manifest.VectrVersion, "live-vectr-version", restoreInfo.VectrVersion)

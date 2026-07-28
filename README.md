@@ -37,6 +37,7 @@ This repository provides a CLI tool for saving, restoring, dumping, and transfer
     - [Restoring or Transferring a Single Campaign](#restoring-or-transferring-a-single-campaign)
       - [Example using `restore`](#example-using-restore)
     - [Recovering from a Duplicate Assessment ID](#recovering-from-a-duplicate-assessment-id)
+    - [Recovering from an Unsupported VECTR Version Error](#recovering-from-an-unsupported-vectr-version-error)
     - [Defense Tool Reconciliation](#defense-tool-reconciliation)
     - [Force Environment Only Import](#force-environment-only-import)
     - [Diagnostic Command](#diagnostic-command)
@@ -89,7 +90,11 @@ You can download the latest binary from the [release page](https://github.com/Se
 
 ### Supported VECTR Versions
 
-vat 1.x supports VECTR versions below 9.14; VECTR 9.14 and later require vat 2.x. Commands that connect to a VECTR instance check the live version (at major.minor granularity) and refuse to run against an unsupported one. Pass `--ignore-version-check` to downgrade that failure to a warning and proceed anyway.
+vat 2.x supports VECTR 9.14 and later; VECTR versions before 9.14 require vat 1.x (see [Upgrading from vat 1.x](#upgrading-from-vat-1x)).
+
+This isn't a fixed list of "known good" versions — every command that connects to a live VECTR instance (`save`, `restore`, `dump`, `transfer`) fetches the live server's version first, checks it (at major.minor granularity) against the range this vat build supports, and aborts before making any changes if it falls outside that range. Running against an incompatible VECTR version risks partial or corrupted data rather than a clean failure, so vat would rather stop early. If vat can't parse the reported version at all (an unusual dev build, for example), it logs a warning and proceeds anyway; the check only blocks on a version it can positively identify as out of range.
+
+Pass `--ignore-version-check` to downgrade a failed check to a warning and proceed anyway. There's no guarantee vat's GraphQL queries still behave correctly against an out-of-range VECTR version, so treat this as knowingly attempting an unsupported combination (e.g. against a pre-release VECTR build), not as a way to permanently support it.
 
 ### Generating VECTR Credentials
 
@@ -137,6 +142,7 @@ Save assessment data from a VECTR instance to an encrypted, compressed file:
 - `--client-cert-file`: Path to the client certificate file for mTLS.
 - `--client-key-file`: Path to the client key file for mTLS.
 - `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs).
+- `--ignore-version-check`: Proceed with a warning instead of aborting when the live VECTR version is outside the [supported range](#supported-vectr-versions).
 
 ### Restore Assessment Data
 
@@ -172,6 +178,7 @@ fail to create, `vat` reports how many failed per campaign; use
 - `--client-cert-file`: Path to the client certificate file for mTLS.
 - `--client-key-file`: Path to the client key file for mTLS.
 - `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs).
+- `--ignore-version-check`: Proceed with a warning instead of aborting when the live VECTR version is outside the [supported range](#supported-vectr-versions).
 
 ### Dump Assessment Data
 
@@ -193,6 +200,7 @@ Dump all assessments from a VECTR instance:
 - `--client-cert-file`: Path to the client certificate file for mTLS.
 - `--client-key-file`: Path to the client key file for mTLS.
 - `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs).
+- `--ignore-version-check`: Proceed with a warning instead of aborting when the live VECTR version is outside the [supported range](#supported-vectr-versions).
 
 #### Filter File Format
 The filter file is a CSV file used to specify which environments and assessments should be included in the dump process. Each line should contain an environment name followed by an assessment name, separated by a comma. You can use a wildcard (`*`) to include all environments or assessments.
@@ -238,6 +246,7 @@ Transfer an assessment from one VECTR instance directly to another:
 - `--client-cert-file`: Path to the client certificate file for mTLS. (will be applied for both source and dest)
 - `--client-key-file`: Path to the client key file for mTLS. (will be applied for both source and dest)
 - `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs). (will be applied for both source and dest)
+- `--ignore-version-check`: Proceed with a warning instead of aborting when the source or target VECTR version is outside the [supported range](#supported-vectr-versions). (checked for both source and dest)
 - `--target-assessment-name`: Overrides the name of the assessment in the target instance. Required when using `--source-campaign-name`.
 - `--source-campaign-name`: Name of a specific campaign to transfer. If set, `--target-assessment-name` must be an existing assessment.
 
@@ -273,6 +282,19 @@ colliding with the existing one:
 ```bash
 ./vat restore --hostname <target-hostname> --env <target-env> --vectr-creds-file <path-to-vectr-creds-file> --input-file assessment.vat --reset-id ...
 ```
+
+### Recovering from an Unsupported VECTR Version Error
+
+If a command aborts with an error like `VECTR version "..." is outside the range supported by this version of vat`, the live instance you pointed `vat` at is running a VECTR version this build doesn't support (see [Supported VECTR Versions](#supported-vectr-versions)). You have two options:
+
+1. **Use a compatible vat build.** Install the major version of vat that matches the VECTR instance's version (vat 1.x for VECTR below 9.14, vat 2.x for VECTR 9.14+). This is the safest option, since only that combination is validated.
+2. **Proceed anyway with `--ignore-version-check`.** If you know what you're doing (e.g. testing against a pre-release VECTR build), re-run the exact same command with `--ignore-version-check` added to downgrade the failure to a warning and continue:
+
+```bash
+./vat restore --hostname <target-hostname> --env <target-env> --vectr-creds-file <path-to-vectr-creds-file> --input-file assessment.vat --ignore-version-check ...
+```
+
+The same flag applies to `save`, `dump`, and `transfer`.
 
 ### Defense Tool Reconciliation
 

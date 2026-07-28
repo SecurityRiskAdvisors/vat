@@ -36,25 +36,25 @@ func TestParseMajorMinor(t *testing.T) {
 	}
 }
 
-// TestCheckVectrVersionSupported asserts the vat 1.x range: VECTR must be
-// below 9.14. Any 9.14 build (including SNAPSHOT/RC/four-part variants)
-// counts as 9.14 and is rejected. Unparseable versions are allowed through
+// TestCheckVectrVersionSupported asserts the vat 2.x range: VECTR must be
+// 9.14 or later. Any 9.14 build (including SNAPSHOT/RC/four-part variants)
+// counts as 9.14 and is accepted. Unparseable versions are allowed through
 // with a warning.
 func TestCheckVectrVersionSupported(t *testing.T) {
 	tests := []struct {
 		version string
 		wantErr bool
 	}{
-		{"9.12.1", false},
-		{"9.13.2", false},
-		{"9.13.99-SNAPSHOT", false},
-		{"9.14", true},
-		{"9.14.0", true},
-		{"9.14.0-SNAPSHOT", true},
-		{"9.14-SNAPSHOT", true},
-		{"9.14.0.1", true},
-		{"9.15.1", true},
-		{"10.0", true},
+		{"9.12.1", true},
+		{"9.13.2", true},
+		{"9.13.99-SNAPSHOT", true},
+		{"9.14", false},
+		{"9.14.0", false},
+		{"9.14.0-SNAPSHOT", false},
+		{"9.14-SNAPSHOT", false},
+		{"9.14.0.1", false},
+		{"9.15.1", false},
+		{"10.0", false},
 		{"none_found", false},
 		{"garbage", false},
 	}

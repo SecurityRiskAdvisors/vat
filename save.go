@@ -49,10 +49,6 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		Manifest:           NewManifestMetadata(ctx),
 	}
 
-	if data.Manifest.VectrVersion != TAGGED_VECTR_VERSION {
-		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "saved-data-version", data.Manifest.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION, "vat-version", data.Manifest.VatVersion)
-	}
-
 	assessment, err := dao.GetAllAssessments(ctx, client, db, assessment_name)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
