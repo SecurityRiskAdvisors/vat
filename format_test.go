@@ -153,15 +153,21 @@ func genLibraryTestCasesResource(t *rapid.T) vat.LibraryTestCasesResource {
 	return m
 }
 
-func genToolsMap(t *rapid.T, label string) map[string]vat.GenericBlueTool {
+func genToolsMap(t *rapid.T, label string) map[string]vat.DefenseToolRef {
 	n := rapid.IntRange(0, 3).Draw(t, label+".n")
-	m := make(map[string]vat.GenericBlueTool, n)
+	m := make(map[string]vat.DefenseToolRef, n)
 	for i := 0; i < n; i++ {
 		k := rapid.String().Draw(t, label+".key")
-		m[k] = vat.GenericBlueTool{
-			Id:          rapid.String().Draw(t, label+".Id"),
+		m[k] = vat.DefenseToolRef{
 			Name:        rapid.String().Draw(t, label+".Name"),
-			ProductName: rapid.String().Draw(t, label+".ProductName"),
+			Description: rapid.String().Draw(t, label+".Description"),
+			Active:      rapid.Bool().Draw(t, label+".Active"),
+			Layers:      rapid.SliceOf(rapid.String()).Draw(t, label+".Layers"),
+			Product: vat.DefenseToolProductRef{
+				Ref:        rapid.String().Draw(t, label+".Product.Ref"),
+				Name:       rapid.String().Draw(t, label+".Product.Name"),
+				VendorName: rapid.String().Draw(t, label+".Product.VendorName"),
+			},
 		}
 	}
 	return m

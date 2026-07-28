@@ -1,0 +1,8 @@
+query GetAllDefensiveLayers($db: String!) {
+  defensivelayers(db: $db) {
+    nodes {
+      id
+      name
+    }
+  }
+}

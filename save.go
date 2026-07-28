@@ -43,8 +43,8 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		"assessment_name", assessment_name)
 	data := &AssessmentData{
 		AssessmentResource: AssessmentResource{},
-		ToolsMap:           map[string]GenericBlueTool{},
-		IdToolsMap:         map[string]GenericBlueTool{},
+		ToolsMap:           map[string]DefenseToolRef{},
+		IdToolsMap:         map[string]DefenseToolRef{},
 		OrgMap:             make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
 		Manifest:           NewManifestMetadata(ctx),
 	}
@@ -192,37 +192,45 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 		return nil, fmt.Errorf("could not connect to fetch blue tools for %s: %w", db, err)
 	}
 
+	// Index once by id so both loops below always build a DefenseToolRef from
+	// the full GetAllDefenseTools node -- tc.BlueTools' own selection lacks
+	// description/active/product ref, so resolving through this index (rather
+	// than tc.BlueTools' fields directly) keeps every ref fully populated
+	// regardless of which loop finds it first.
+	bluetoolsById := make(map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(btr.Bluetools.Nodes))
+	for _, bt := range btr.Bluetools.Nodes {
+		bluetoolsById[bt.Id] = bt
+	}
+
 	for _, c := range data.Assessment.Campaigns {
 		for _, tc := range c.TestCases {
 			for _, bt := range tc.BlueTools {
-				if _, ok := data.ToolsMap[bt.Name]; !ok {
-					gbt := GenericBlueTool{
-						Id:          bt.Id,
-						Name:        bt.Name,
-						ProductName: bt.DefenseToolProduct.Name,
-					}
-					data.ToolsMap[bt.Name] = gbt
-					data.IdToolsMap[bt.Id] = gbt
+				if _, ok := data.IdToolsMap[bt.Id]; ok {
+					continue
 				}
+				full, ok := bluetoolsById[bt.Id]
+				if !ok {
+					slog.WarnContext(ctx, "test case references a blue tool not present in GetAllDefenseTools, skipping", "tool-id", bt.Id, "tool-name", bt.Name)
+					continue
+				}
+				ref := toDefenseToolRef(full)
+				data.ToolsMap[ref.Key()] = ref
+				data.IdToolsMap[bt.Id] = ref
 			}
 			for _, outcomes := range tc.DefenseToolOutcomes {
-				for _, bt := range btr.Bluetools.Nodes {
-					if strconv.Itoa(outcomes.DefenseToolId) == bt.Id {
-						if _, ok := data.ToolsMap[bt.Name]; !ok {
-							gbt := GenericBlueTool{
-								Id:          bt.Id,
-								Name:        bt.Name,
-								ProductName: bt.DefenseToolProduct.Name,
-							}
-							data.ToolsMap[bt.Name] = gbt
-							data.IdToolsMap[bt.Id] = gbt
-							break
-						}
-
-					}
+				toolId := strconv.Itoa(outcomes.DefenseToolId)
+				if _, ok := data.IdToolsMap[toolId]; ok {
+					continue
 				}
+				full, ok := bluetoolsById[toolId]
+				if !ok {
+					slog.WarnContext(ctx, "defense tool outcome references a tool not present in GetAllDefenseTools, skipping", "tool-id", toolId)
+					continue
+				}
+				ref := toDefenseToolRef(full)
+				data.ToolsMap[ref.Key()] = ref
+				data.IdToolsMap[toolId] = ref
 			}
-
 		}
 	}
 
@@ -230,4 +238,25 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 
 	return data, nil
 
+}
+
+// toDefenseToolRef projects a full GetAllDefenseTools BlueTool node down to
+// the durable, cross-instance identity restore needs (see DefenseToolRef's
+// doc comment).
+func toDefenseToolRef(bt dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool) DefenseToolRef {
+	layers := make([]string, 0, len(bt.DefensiveLayers))
+	for _, l := range bt.DefensiveLayers {
+		layers = append(layers, l.Name)
+	}
+	return DefenseToolRef{
+		Name:        bt.Name,
+		Description: bt.Description,
+		Active:      bt.Active,
+		Layers:      layers,
+		Product: DefenseToolProductRef{
+			Ref:        bt.DefenseToolProduct.Ref,
+			Name:       bt.DefenseToolProduct.Name,
+			VendorName: bt.DefenseToolProduct.Vendor.Name,
+		},
+	}
 }

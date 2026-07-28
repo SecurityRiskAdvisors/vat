@@ -236,8 +236,14 @@ type LibraryTestCasesResource map[string]dao.GetLibraryTestCasesLibraryTestcases
 
 type OrgMapResource map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
 
-type ToolsMapResource map[string]GenericBlueTool
-type IdToolsMapResource map[string]GenericBlueTool
+// ToolsMapResource is keyed by DefenseToolRef.Key() (dedup key across the
+// whole assessment).
+type ToolsMapResource map[string]DefenseToolRef
+
+// IdToolsMapResource is keyed by the source tool's id -- how a
+// DefenseToolOutcome.DefenseToolId (a source-instance int id) gets resolved
+// back to a DefenseToolRef during restore.
+type IdToolsMapResource map[string]DefenseToolRef
 
 // EncodeToJson serializes an AssessmentData into the manifest+resource
 // envelope wire format.

@@ -28,6 +28,30 @@ input CreateCampaignInput (used in: CreateCampaigns)
   assessmentId: String!
   campaignData: [CreateCampaignDataInput!]!
   db: String!
+input CreateDefenseLayerDataInput (used in: CreateDefenseLayer)
+  description: String
+  icon: String
+  name: String!
+input CreateDefenseLayerInput (used in: CreateDefenseLayer)
+  db: String!
+  defenseLayerData: [CreateDefenseLayerDataInput!]
+input CreateDefenseToolDataInput (used in: CreateDefenseTool)
+  active: Boolean
+  defenseLayerIds: [String!]
+  defenseToolProductId: String!
+  description: String
+  name: String!
+input CreateDefenseToolInput (used in: CreateDefenseTool)
+  createDefenseToolData: [CreateDefenseToolDataInput!]
+  db: String!
+input CreateDefenseToolProductDataInput (used in: CreateDefenseToolProduct)
+  defenseLayerIds: [String]
+  description: String
+  icon: String
+  name: String!
+  vendorId: String
+input CreateDefenseToolProductInput (used in: CreateDefenseToolProduct)
+  defenseToolProducts: [CreateDefenseToolProductDataInput]
 input CreateTestCaseAndTemplateMatchByNameInput (used in: CreateTestCases)
   campaignId: String!
   createTestCaseInputs: [CreateTestCaseDataWithTemplateNameInput!]!
@@ -143,6 +167,16 @@ input TimelineEventInput (used in: CreateTimelineEvents)
 input ToolOutcomeChangeEventInput (used in: CreateTimelineEvents)
   outcomeId: String!
   toolId: String!
+input UpdateDefenseToolDataInput (used in: UpdateDefenseTool)
+  active: Boolean
+  defenseLayerIds: [String!]
+  defenseToolProductId: String!
+  description: String
+  id: String!
+  name: String!
+input UpdateDefenseToolInput (used in: UpdateDefenseTool)
+  db: String!
+  updateDefenseToolData: [UpdateDefenseToolDataInput!]
 output AppUser (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetLibraryTestCases)
   createdAt: String
   id: String
@@ -216,7 +250,7 @@ output AutomationArgument (used in: GetAllAssessments, GetBatchAssessmentsForDb,
   argumentKey: String
   argumentType: String
   argumentValue: String
-output BlueTool (used in: GetAllAssessments, GetAllDefenseTools, GetBatchAssessmentsForDb)
+output BlueTool (used in: CreateDefenseTool, GetAllAssessments, GetAllDefenseTools, GetBatchAssessmentsForDb, UpdateDefenseTool)
   active: Boolean
   createTime: Float
   defenseToolProduct: DefenseToolProduct
@@ -259,6 +293,8 @@ output CreateAssessmentPayload (used in: CreateAssessment)
   assessments: [Assessment]
 output CreateCampaignPayload (used in: CreateCampaigns)
   campaigns: [Campaign]
+output CreateDefenseToolProductPayload (used in: CreateDefenseToolProduct)
+  defenseToolProducts: [DefenseToolProduct]
 output CreateTestCasePayload (used in: CreateTemplateTestCases, CreateTestCases, CreateTestCasesByLibraryId, CreateTestCasesNoTemplate)
   testCaseCreateItems: [TestCaseCreateItem]
   testCases: [TestCase]
@@ -268,10 +304,26 @@ output CreateTimelineEventsPayload (used in: CreateTimelineEvents)
 output Database (used in: GetAllDatabases)
   id: Int
   name: String
+output DefenseLayerMutationPayload (used in: CreateDefenseLayer)
+  defenseLayers: [DefensiveLayer]
+output DefenseLayerMutations (used in: CreateDefenseLayer)
+  clone: DefenseLayerMutationPayload
+  create: DefenseLayerMutationPayload
+  createLibrary: DefenseLayerMutationPayload
+  delete: DeleteDefenseLayerPayload
+  deleteLibrary: DeleteDefenseLayerPayload
+  update: DefenseLayerMutationPayload
+  updateLibrary: DefenseLayerMutationPayload
+output DefenseToolMutationPayload (used in: CreateDefenseTool, UpdateDefenseTool)
+  defenseTools: [BlueTool]
+output DefenseToolMutations (used in: CreateDefenseTool, UpdateDefenseTool)
+  create: DefenseToolMutationPayload
+  delete: DeleteDefenseToolPayload
+  update: DefenseToolMutationPayload
 output DefenseToolOutcome (used in: GetAllAssessments, GetBatchAssessmentsForDb, GetLibraryTestCases)
   defenseToolId: Int!
   outcomeId: String!
-output DefenseToolProduct (used in: GetAllAssessments, GetAllDefenseTools, GetBatchAssessmentsForDb)
+output DefenseToolProduct (used in: CreateDefenseTool, CreateDefenseToolProduct, GetAllAssessments, GetAllDefenseToolProducts, GetAllDefenseTools, GetBatchAssessmentsForDb, UpdateDefenseTool)
   createTime: Float
   defensiveLayers: [DefensiveLayer]
   description: String
@@ -282,7 +334,14 @@ output DefenseToolProduct (used in: GetAllAssessments, GetAllDefenseTools, GetBa
   sys: Boolean
   updateTime: Float
   vendor: Vendor
-output DefensiveLayer (used in: GetAllAssessments, GetAllDefenseTools, GetBatchAssessmentsForDb, GetLibraryTestCases)
+output DefenseToolProductMutations (used in: CreateDefenseToolProduct)
+  create: CreateDefenseToolProductPayload
+  delete: DeleteDefenseToolProductPayload
+  update: UpdateDefenseToolProductPayload
+output DefenseToolProductsConnection (used in: GetAllDefenseToolProducts)
+  nodes: [DefenseToolProduct]
+  pageInfo: PageInfo
+output DefensiveLayer (used in: CreateDefenseLayer, CreateDefenseTool, GetAllAssessments, GetAllDefenseTools, GetAllDefensiveLayers, GetBatchAssessmentsForDb, GetLibraryTestCases, UpdateDefenseTool)
   createTime: Float
   deprecated: Boolean
   description: String
@@ -292,6 +351,9 @@ output DefensiveLayer (used in: GetAllAssessments, GetAllDefenseTools, GetBatchA
   offset: Int
   template: DefensiveLayer
   updateTime: Float
+output DefensiveLayerConnection (used in: GetAllDefensiveLayers)
+  nodes: [DefensiveLayer]
+  pageInfo: PageInfo
 output DeleteAssessmentPayload (used in: DeleteAssessment)
   deletedIds: [String!]
 output ExecutionArtifactIdInfo (used in: GetAllAssessments, GetBatchAssessmentsForDb)
@@ -521,10 +583,13 @@ output UnstructuredLog (used in: GetAllAssessments, GetBatchAssessmentsForDb, Ge
   filename: String
   id: String
   updateTime: Float
-output Vendor (used in: GetAllAssessments, GetAllDefenseTools, GetBatchAssessmentsForDb, GetLibraryTestCases)
+output Vendor (used in: FindVendor, GetAllAssessments, GetAllDefenseTools, GetBatchAssessmentsForDb, GetLibraryTestCases)
   createTime: Float
   icon: String
   id: String!
   name: String
   offset: Int
   updateTime: Float
+output VendorConnection (used in: FindVendor)
+  nodes: [Vendor]
+  pageInfo: PageInfo

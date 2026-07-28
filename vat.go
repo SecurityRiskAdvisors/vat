@@ -3,6 +3,7 @@ package vat
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -14,16 +15,41 @@ type VatContextValue string
 //go:embed LICENSE
 var License string
 
-// GenericBlueTool represents a tool within the VECTR application, providing a standardized way to manage tool-related data.
-//
-// Fields:
-//   - Id: A unique identifier for the tool.
-//   - Name: The name of the tool.
-//   - ProductName: The product name associated with the tool.
-type GenericBlueTool struct {
-	Id          string
+// DefenseToolRef is a defense tool's durable, cross-instance identity as
+// recorded in a saved assessment: enough to find-or-create the same tool
+// (and its product/layers) in a different VECTR instance during restore,
+// and enough to re-associate a test case's tool references (e.g.
+// DefenseToolOutcomes) with whichever tool ends up representing it there.
+type DefenseToolRef struct {
 	Name        string
-	ProductName string
+	Description string
+	Active      bool
+	Layers      []string // defense layer names attached directly to the tool
+	Product     DefenseToolProductRef
+}
+
+// DefenseToolProductRef is a defense tool product's durable, cross-instance
+// identity. Ref is the matching key restore uses to find/reuse a product on
+// the target instance -- ids are per-instance and never compared directly.
+type DefenseToolProductRef struct {
+	Ref        string
+	Name       string
+	VendorName string
+}
+
+// Key is the composite identity restore uses to decide whether a target
+// instance already has this tool: name + product ref + active state. Two
+// tools sharing a name but differing in product or active state are
+// considered different tools (see restore.go's reconcileDefenseTools).
+func (d DefenseToolRef) Key() string {
+	return defenseToolKey(d.Name, d.Product.Ref, d.Active)
+}
+
+// defenseToolKey is the shared key format used to correlate a DefenseToolRef
+// (from a saved assessment) with a BlueTool on a target instance during
+// restore -- see reconcileDefenseTools in restore.go.
+func defenseToolKey(name, productRef string, active bool) string {
+	return fmt.Sprintf("%s\x00%s\x00%t", name, productRef, active)
 }
 
 // AssessmentData is the in-memory model for a single assessment restore/save

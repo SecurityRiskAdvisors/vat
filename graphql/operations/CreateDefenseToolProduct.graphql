@@ -1,0 +1,14 @@
+# @genqlient(for: "CreateDefenseToolProductDataInput.vendorId", omitempty: true, pointer:true)
+mutation CreateDefenseToolProduct(
+  $input: CreateDefenseToolProductInput!
+  ) {
+  defenseToolProduct {
+    create(input: $input) {
+      defenseToolProducts {
+        id
+        name
+        ref
+      }
+    }
+  }
+}
