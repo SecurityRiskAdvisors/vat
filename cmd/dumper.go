@@ -67,6 +67,7 @@ var dumpCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		slog.Info("validated credentials and fetched vectr version", "hostname", hostname, "vectr-version", vectrVersion)
+		enforceVectrVersionCheck(ctx, vectrVersion, hostname)
 		versionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(vectrVersion))
 
 		// Set up the filter

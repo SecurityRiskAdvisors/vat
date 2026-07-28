@@ -73,6 +73,7 @@ var transferCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		slog.InfoContext(ctx, "validated credentials and fetched vectr version from source", "src-hostname", sourceHostname, "src-vectr-version", sourceVectrVersion)
+		enforceVectrVersionCheck(ctx, sourceVectrVersion, sourceHostname)
 		sourceVersionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(sourceVectrVersion))
 
 		// Set up the target VECTR client
@@ -92,6 +93,7 @@ var transferCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		slog.InfoContext(ctx, "validated credentials and fetched vectr version", "hostname", targetHostname, "vectr-version", targetVectrVersion)
+		enforceVectrVersionCheck(ctx, targetVectrVersion, targetHostname)
 		targetVersionContext := context.WithValue(ctx, vat.VECTR_VERSION, vat.VatContextValue(targetVectrVersion))
 
 		// Fetch the assessment data from the source instance
