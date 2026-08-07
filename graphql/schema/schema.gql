@@ -829,10 +829,10 @@ type CreateTestCasePayload {
 
   """
   Populated only by createWithoutTemplate, createWithTemplateMatchByName, and
-  createWithTemplateMatchByLibraryId - one item per submitted testCaseData entry, in submission
-  order, each carrying back its (caller-supplied or server-generated) clientId. Null for the
-  other mutations returning this payload (createTemplate, cloneTemplate,
-  createTemplateFromEnvTestCase).
+  createWithTemplateMatchByLibraryId. This has one item per submitted testCaseData entry,
+  in submission order, each carrying back its (caller-supplied or server-generated)
+  clientId. Null for the other mutations returning this payload (createTemplate,
+  cloneTemplate, createTemplateFromEnvTestCase).
   """
   testCaseCreateItems: [TestCaseCreateItem]
 }
@@ -2725,10 +2725,6 @@ input TestCaseFilter {
   defenseLayers: DefenseLayerFilter
   operatorGuidance: StringOperator
   deprecated: Boolean
-
-  """
-  Supports only name,description,operatorGuidance,techniqueName,phase
-  """
   or: [TestCaseFilter]
 }
 
