@@ -238,10 +238,19 @@ func validateDefenseToolRefs(toolsToReconcile map[string]DefenseToolRef) error {
 
 // reconcileDefenseTools ensures every DefenseToolRef in toolsToReconcile has
 // a corresponding BlueTool in the target db: reusing one that already
-// matches on name+product ref+active, adding any defense layers it's
-// missing (creating layers as needed), or creating a new product/layer(s)/
-// tool as needed. Returns the target tool id for each ref, keyed by
+// matches on name+product+active, adding any defense layers it's missing
+// (creating layers as needed), or creating a new product/layer(s)/tool as
+// needed. Returns the target tool id for each ref, keyed by
 // DefenseToolRef.Key().
+//
+// The match is done using the resolved target product's id, not the
+// source's product ref: VECTR generates ref as a random string
+// independently on every instance, so a source ref and a target ref for
+// what's logically "the same" product (matched by name) will essentially
+// never be equal -- comparing raw refs across instances would make this
+// match fail almost every time. Resolving the product first (see
+// resolveOrCreateDefenseToolProduct) and matching on its target-instance id
+// compares two ids that actually live in the same space.
 //
 // VECTR allows two tools identical in every one of these dimensions (name,
 // product, active, layers) to coexist; when that happens vat can't tell
@@ -264,7 +273,7 @@ func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string
 	}
 	toolsByKey := make(map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(existingTools.Bluetools.Nodes))
 	for _, t := range existingTools.Bluetools.Nodes {
-		key := defenseToolKey(t.Name, t.DefenseToolProduct.Ref, t.Active)
+		key := defenseToolKey(t.Name, t.DefenseToolProduct.Id, t.Active)
 		if prev, ok := toolsByKey[key]; ok {
 			slog.WarnContext(ctx, "target instance has more than one defense tool with the same name+product+active; picking the more recently updated one", "db", db, "tool-name", t.Name)
 			if t.UpdateTime < prev.UpdateTime || (t.UpdateTime == prev.UpdateTime && t.CreateTime <= prev.CreateTime) {
@@ -282,10 +291,29 @@ func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string
 		return nil, fmt.Errorf("could not fetch defense tool products: %w", err)
 	}
 	productsByRef := make(map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, len(existingProductsResp.DefenseToolProducts.Nodes))
+	// productsByName is the name fallback used when a source ref doesn't
+	// match anything on the target (see resolveOrCreateDefenseToolProduct).
+	// VECTR doesn't enforce unique product names, and this index is
+	// case-insensitive on top of that, so two products can collapse onto one
+	// entry; the last one seen wins, which is an arbitrary choice among
+	// equals. Warn when it happens rather than resolving silently: if the
+	// existing target tool hangs off the product that lost, its tool key
+	// won't match and vat will create a second, near-identical tool next to
+	// it. Same known limitation as the duplicate-tool case below, and it
+	// converges the same way -- a later restore sees both tools under one key
+	// and picks the more recently updated one -- but the duplicate stays in
+	// the target until someone cleans it up. Products matched by ref are
+	// unaffected: that path is checked first and refs are unique per
+	// instance.
 	productsByName := make(map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, len(existingProductsResp.DefenseToolProducts.Nodes))
 	for _, p := range existingProductsResp.DefenseToolProducts.Nodes {
 		productsByRef[p.Ref] = p
-		productsByName[strings.ToLower(p.Name)] = p
+		nameKey := strings.ToLower(p.Name)
+		if prev, ok := productsByName[nameKey]; ok {
+			slog.WarnContext(ctx, "target instance has more than one defense tool product with the same name (case-insensitively); the name fallback can only resolve to one of them, which may create a duplicate defense tool",
+				"product-name", p.Name, "kept-product-id", p.Id, "kept-product-ref", p.Ref, "ignored-product-id", prev.Id, "ignored-product-ref", prev.Ref)
+		}
+		productsByName[nameKey] = p
 	}
 
 	existingLayersResp, err := dao.GetAllDefensiveLayers(ctx, client, db)
@@ -314,8 +342,14 @@ func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string
 
 	result := make(map[string]string, len(toolsToReconcile))
 	for key, ref := range toolsToReconcile {
-		if existing, ok := toolsByKey[key]; ok {
-			slog.DebugContext(ctx, "defense tool matched existing", "tool-name", ref.Name, "product-ref", ref.Product.Ref, "active", ref.Active, "target-tool-id", existing.Id)
+		product, err := resolveOrCreateDefenseToolProduct(ctx, client, ref.Product, productsByRef, productsByName, libraryLayersByName)
+		if err != nil {
+			return nil, err
+		}
+
+		targetKey := defenseToolKey(ref.Name, product.Id, ref.Active)
+		if existing, ok := toolsByKey[targetKey]; ok {
+			slog.DebugContext(ctx, "defense tool matched existing", "tool-name", ref.Name, "product-id", product.Id, "active", ref.Active, "target-tool-id", existing.Id)
 			id, err := reconcileExistingDefenseTool(ctx, client, db, existing, ref, layersByName, libraryLayersByName)
 			if err != nil {
 				return nil, err
@@ -323,12 +357,8 @@ func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string
 			result[key] = id
 			continue
 		}
-		slog.DebugContext(ctx, "defense tool has no existing match, resolving product/layers to create it", "tool-name", ref.Name, "product-ref", ref.Product.Ref, "active", ref.Active)
+		slog.DebugContext(ctx, "defense tool has no existing match, resolving layers to create it", "tool-name", ref.Name, "product-id", product.Id, "active", ref.Active)
 
-		product, err := resolveOrCreateDefenseToolProduct(ctx, client, ref.Product, productsByRef, productsByName, libraryLayersByName)
-		if err != nil {
-			return nil, err
-		}
 		layerIds, err := resolveOrCreateDefenseLayerIds(ctx, client, db, ref.Layers, layersByName, libraryLayersByName)
 		if err != nil {
 			return nil, err
@@ -356,6 +386,35 @@ func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string
 		created := r.DefenseTool.Create.DefenseTools[0]
 		slog.DebugContext(ctx, "defense tool created", "tool-name", ref.Name, "product-id", product.Id, "target-tool-id", created.Id, "layer-ids", layerIds)
 		result[key] = created.Id
+
+		// Fold the new tool into toolsByKey so a later ref in this same run
+		// that resolves to the same name+product+active reuses it -- and gets
+		// its own layers reconciled onto it -- instead of creating a second,
+		// identical tool. Two source refs can land on one target key even
+		// though they're distinct keys in toolsToReconcile: they need only
+		// differ in product ref and have product names that collapse together
+		// under resolveOrCreateDefenseToolProduct's case-insensitive name
+		// fallback.
+		//
+		// CreateTime/UpdateTime aren't in the create payload and stay zero.
+		// That's harmless: the duplicate tiebreak above runs only while
+		// indexing the pre-existing tools, and this key is by definition
+		// unoccupied at this point.
+		createdLayers := make([]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueToolDefensiveLayersDefensiveLayer, 0, len(created.DefensiveLayers))
+		for _, l := range created.DefensiveLayers {
+			createdLayers = append(createdLayers, dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueToolDefensiveLayersDefensiveLayer{Id: l.Id, Name: l.Name})
+		}
+		toolsByKey[targetKey] = dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool{
+			Id:              created.Id,
+			Name:            created.Name,
+			Description:     created.Description,
+			Active:          created.Active,
+			DefensiveLayers: createdLayers,
+			DefenseToolProduct: dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueToolDefenseToolProduct{
+				Id:  created.DefenseToolProduct.Id,
+				Ref: created.DefenseToolProduct.Ref,
+			},
+		}
 	}
 	return result, nil
 }
@@ -445,7 +504,7 @@ func resolveOrCreateDefenseLayerIds(ctx context.Context, client graphql.Client, 
 		})
 		if err != nil {
 			if gqlObject, ok := gqlErrParse(err); ok {
-				slog.ErrorContext(ctx, "detailed error", "error", gqlObject, "cache", layersByName)
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 			}
 			return nil, fmt.Errorf("could not create defense layer %q: %w", name, err)
 		}
@@ -713,7 +772,7 @@ func restoreCampaigns(
 				DataVer:          serialized_tc.DataVer,
 				OverrideOutcome:  serialized_tc.OverrideOutcome,
 				UserContext:      serialized_tc.UserContext,
-				AttackSuccess:    serialized_tc.AttackSuccess,
+				//AttackSuccess:    serialized_tc.AttackSuccess, // handled below
 				// these are no longer required, they are handled by timeline events
 				//AttackStart:      serialized_tc.AttackStart.CreateTime,
 				//AttackStop:       serialized_tc.AttackStop.CreateTime,
@@ -728,6 +787,12 @@ func restoreCampaigns(
 				//AttackAutomation:      AttackAutomationInput{},       //handle below
 				//RedTools:              []RedToolInput{},
 				//DefenseToolOutcomes:   []DefenseToolOutcomeInput{},   // handle below
+			}
+
+			if len(strings.TrimSpace(string(serialized_tc.AttackSuccess))) == 0 {
+				testCaseData.AttackSuccess = nil
+			} else {
+				testCaseData.AttackSuccess = &serialized_tc.AttackSuccess
 			}
 			// Need to check if this logic has issues still
 			//if testCaseData.AttackStart == 0 {

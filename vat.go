@@ -46,19 +46,32 @@ type DefenseLayer struct {
 	Description string
 }
 
-// Key is the composite identity restore uses to decide whether a target
-// instance already has this tool: name + product ref + active state. Two
-// tools sharing a name but differing in product or active state are
-// considered different tools (see restore.go's reconcileDefenseTools).
+// Key is this tool's composite identity within the instance it was saved
+// from: name + product + active state. Two tools sharing a name but
+// differing in product or active state are considered different tools (see
+// restore.go's reconcileDefenseTools).
+//
+// The product component is the *source* instance's product ref, so a Key is
+// always a source-side identity -- it's what ToolsMap and IdToolsMap are
+// keyed by, and what reconcileDefenseTools keys its results by. It is never
+// compared against a key built from target-instance data: refs are generated
+// per-instance, so reconcileDefenseTools resolves each ref's product on the
+// target first and builds its own key from that product's target id instead
+// (see its doc comment).
 func (d DefenseToolRef) Key() string {
 	return defenseToolKey(d.Name, d.Product.Ref, d.Active)
 }
 
-// defenseToolKey is the shared key format used to correlate a DefenseToolRef
-// (from a saved assessment) with a BlueTool on a target instance during
-// restore -- see reconcileDefenseTools in restore.go.
-func defenseToolKey(name, productRef string, active bool) string {
-	return fmt.Sprintf("%s\x00%s\x00%t", name, productRef, active)
+// defenseToolKey is the shared format for a tool's name + product +
+// active-state identity. productKey is whichever product identifier is
+// meaningful in the space the key belongs to: the source product ref for a
+// saved DefenseToolRef (see Key above), or the target product id for a
+// BlueTool on the instance being restored into (see reconcileDefenseTools in
+// restore.go). Keys from those two spaces are never compared with each other
+// -- the format is shared so that each space formats its own keys
+// consistently, not so the two can be matched up.
+func defenseToolKey(name, productKey string, active bool) string {
+	return fmt.Sprintf("%s\x00%s\x00%t", name, productKey, active)
 }
 
 // AssessmentData is the in-memory model for a single assessment restore/save

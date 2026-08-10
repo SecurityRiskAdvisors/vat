@@ -242,6 +242,15 @@ const existingToolsResponse = `{
 }`
 
 const emptyProductsResponse = `{"defenseToolProducts": {"nodes": []}}`
+
+// existingProductsResponse mirrors the product already attached to the tool
+// in existingToolsResponse (same id/ref/name) -- reconcileDefenseTools
+// resolves a ref's product before checking for a matching existing tool, so
+// this must be present for CleanMatch/MissingLayers to actually reach that
+// tool via a product match rather than trying to create a duplicate one.
+const existingProductsResponse = `{"defenseToolProducts": {"nodes": [
+	{"id": "target-product-1", "name": "Falcon", "ref": "crowdstrike-falcon"}
+]}}`
 const emptyLayersResponse = `{"defensivelayers": {"nodes": []}}`
 const singleEndpointLayerResponse = `{"defensivelayers": {"nodes": [{"id": "target-layer-endpoint", "name": "Endpoint"}]}}`
 const emptyLibraryLayersResponse = `{"libraryDefensivelayers": {"nodes": []}}`
@@ -254,7 +263,7 @@ const emptyLibraryLayersResponse = `{"libraryDefensivelayers": {"nodes": []}}`
 func TestReconcileDefenseTools_CleanMatch(t *testing.T) {
 	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
 		"GetAllDefenseTools":           json.RawMessage(existingToolsResponse),
-		"GetAllDefenseToolProducts":    json.RawMessage(emptyProductsResponse),
+		"GetAllDefenseToolProducts":    json.RawMessage(existingProductsResponse),
 		"GetAllDefensiveLayers":        json.RawMessage(emptyLayersResponse),
 		"GetAllLibraryDefensiveLayers": json.RawMessage(emptyLibraryLayersResponse),
 	}}
@@ -284,7 +293,7 @@ func TestReconcileDefenseTools_MissingLayers(t *testing.T) {
 
 	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
 		"GetAllDefenseTools":           json.RawMessage(existingToolsResponse),
-		"GetAllDefenseToolProducts":    json.RawMessage(emptyProductsResponse),
+		"GetAllDefenseToolProducts":    json.RawMessage(existingProductsResponse),
 		"GetAllDefensiveLayers":        json.RawMessage(emptyLayersResponse),
 		"GetAllLibraryDefensiveLayers": json.RawMessage(emptyLibraryLayersResponse),
 		"CreateLibraryDefenseLayer": json.RawMessage(`{
@@ -325,6 +334,41 @@ func TestReconcileDefenseTools_MissingLayers(t *testing.T) {
 	}
 	if client.called("CreateDefenseTool") {
 		t.Error("expected no new tool to be created for a name+product+active match")
+	}
+}
+
+// TestReconcileDefenseTools_ToolMatchViaProductRefMismatch verifies that a
+// source tool is still matched against an existing target tool even when the
+// source and target product refs differ -- VECTR generates ref as a random
+// string independently on every instance, so two instances' refs for
+// logically the same product (matched by name) are never expected to be
+// equal. Matching must go through the resolved target product id, not a raw
+// ref comparison, or this would incorrectly create a duplicate tool.
+func TestReconcileDefenseTools_ToolMatchViaProductRefMismatch(t *testing.T) {
+	ref := existingToolRef
+	ref.Product.Ref = "some-other-ref-from-the-source-instance"
+
+	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
+		"GetAllDefenseTools":           json.RawMessage(existingToolsResponse),
+		"GetAllDefenseToolProducts":    json.RawMessage(existingProductsResponse),
+		"GetAllDefensiveLayers":        json.RawMessage(emptyLayersResponse),
+		"GetAllLibraryDefensiveLayers": json.RawMessage(emptyLibraryLayersResponse),
+	}}
+
+	result, err := reconcileDefenseTools(context.Background(), client, "test-db", map[string]DefenseToolRef{
+		ref.Key(): ref,
+	})
+	if err != nil {
+		t.Fatalf("reconcileDefenseTools returned an error: %v", err)
+	}
+	if got := result[ref.Key()]; got != "target-tool-1" {
+		t.Errorf("resolved id = %q, want %q", got, "target-tool-1")
+	}
+	if client.called("CreateDefenseToolProduct") {
+		t.Error("expected the existing product to be reused via name fallback, not recreated")
+	}
+	if client.called("CreateDefenseTool") {
+		t.Error("expected the existing tool to be reused, not duplicated, despite the product ref mismatch")
 	}
 }
 
@@ -486,6 +530,78 @@ func TestReconcileDefenseTools_NewProductWithLibraryLayers(t *testing.T) {
 	}
 	if got := toolVars.Input.CreateDefenseToolData[0].DefenseLayerIds; slices.Contains(got, "target-library-layer-prevention") {
 		t.Errorf("expected the tool's own defenseLayerIds to never include the product's library layer id, got %v", got)
+	}
+}
+
+// TestReconcileDefenseTools_NoDuplicateToolWithinOneRun verifies that two
+// source refs that collapse onto a single target tool identity produce one
+// created tool, not two. They're distinct keys in toolsToReconcile (their
+// product refs differ) but their product names match case-insensitively, so
+// resolveOrCreateDefenseToolProduct resolves both to the same target product
+// -- which makes their name+product+active identity on the target identical.
+// The tool created for whichever ref is visited first has to be visible to the
+// second, even though the toolsByKey snapshot predates it.
+func TestReconcileDefenseTools_NoDuplicateToolWithinOneRun(t *testing.T) {
+	refA := DefenseToolRef{
+		Name:   "Falcon Sensor",
+		Active: true,
+		Layers: []string{"Endpoint"},
+		Product: DefenseToolProductRef{
+			Ref:  "source-ref-a",
+			Name: "Falcon NGAV",
+		},
+	}
+	refB := refA
+	refB.Product.Ref = "source-ref-b"
+	refB.Product.Name = "falcon ngav" // same product, differs only in case
+	if refA.Key() == refB.Key() {
+		t.Fatal("test setup is wrong: the two refs must be distinct keys in toolsToReconcile")
+	}
+
+	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
+		// No tools in the target yet, so the first ref visited must create one.
+		"GetAllDefenseTools": json.RawMessage(`{"bluetools": {"nodes": []}}`),
+		"GetAllDefenseToolProducts": json.RawMessage(`{"defenseToolProducts": {"nodes": [
+			{"id": "target-product-1", "name": "Falcon NGAV", "ref": "target-side-ref"}
+		]}}`),
+		"GetAllDefensiveLayers":        json.RawMessage(singleEndpointLayerResponse),
+		"GetAllLibraryDefensiveLayers": json.RawMessage(emptyLibraryLayersResponse),
+		"CreateDefenseTool": json.RawMessage(`{
+			"defenseTool": {"create": {"defenseTools": [{
+				"id": "target-tool-new",
+				"name": "Falcon Sensor",
+				"active": true,
+				"description": "",
+				"defenseToolProduct": {"id": "target-product-1", "ref": "target-side-ref"},
+				"defensiveLayers": [{"id": "target-layer-endpoint", "name": "Endpoint"}]
+			}]}}
+		}`),
+	}}
+
+	result, err := reconcileDefenseTools(context.Background(), client, "test-db", map[string]DefenseToolRef{
+		refA.Key(): refA,
+		refB.Key(): refB,
+	})
+	if err != nil {
+		t.Fatalf("reconcileDefenseTools returned an error: %v", err)
+	}
+
+	creates := 0
+	for _, op := range client.calls {
+		if op == "CreateDefenseTool" {
+			creates++
+		}
+	}
+	if creates != 1 {
+		t.Errorf("CreateDefenseTool called %d times, want 1 -- the second ref should have reused the tool created for the first", creates)
+	}
+	if client.called("CreateDefenseToolProduct") {
+		t.Error("expected both refs to resolve to the existing product via the name fallback")
+	}
+	for _, ref := range []DefenseToolRef{refA, refB} {
+		if got := result[ref.Key()]; got != "target-tool-new" {
+			t.Errorf("resolved id for product ref %q = %q, want %q", ref.Product.Ref, got, "target-tool-new")
+		}
 	}
 }
 

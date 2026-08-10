@@ -97,17 +97,42 @@ and always present.
 `reconcileDefenseTools` (`restore.go`) resolves each `DefenseToolRef` in an
 assessment against the target instance:
 
-1. Reuse a matching tool, matched on name, product, and active state.
-2. If a close match exists but is missing some defense layers referenced by
+1. Resolve the ref's defense tool product on the target first
+   (`resolveOrCreateDefenseToolProduct`), since the product is part of the
+   tool's identity and product ids are the only thing that can be compared.
+2. Reuse a matching tool, matched on name, resolved product id, and active
+   state.
+3. If a close match exists but is missing some defense layers referenced by
    the assessment, add the missing layers to it.
-3. Otherwise, create the product, layers, and tool from scratch (`FindVendor`,
-   `CreateDefenseToolProduct`, `CreateDefenseLayer`, `CreateDefenseTool`
-   GraphQL operations).
+4. Otherwise, create the layers and tool from scratch (`FindVendor`,
+   `CreateDefenseToolProduct`, `CreateLibraryDefenseLayer`,
+   `CloneDefenseLayer`, `CreateDefenseTool` GraphQL operations).
+
+Products are matched by `ref` first, then by name (case-insensitively). The
+name fallback exists because `CreateDefenseToolProductDataInput` has no `ref`
+field — VECTR derives `ref` itself on create, so a product `vat` created on a
+previous restore will never match the source's `ref` again. Tool matching goes
+through the resolved product's target id for the same reason: refs are
+generated per-instance, so comparing a source ref to a target ref would fail
+almost every time.
+
+Defense layers come in two flavours that `vat` deliberately keeps in separate
+id spaces even when their names collide: library-level layers attached to a
+`DefenseToolProduct`, and db-scoped layers attached directly to a tool. A
+db-scoped layer can't be created directly — VECTR's create mutation for it
+also tries to create a same-named library layer and errors if one already
+exists — so `vat` resolves-or-creates the library layer and clones it into the
+db instead.
 
 If more than one tool in the target instance matches, `vat` picks the most
 recently updated one and logs a warning — this is a known limitation, not a
 guarantee of correctness, since VECTR doesn't enforce uniqueness on
-name+product+active-state.
+name+product+active-state. Duplicate product names are the same kind of
+limitation: VECTR doesn't enforce uniqueness there either, so when the name
+fallback finds more than one candidate it resolves to one of them arbitrarily
+and warns. Tools created during a restore are folded back into the match index
+as they're made, so a single run won't create two identical tools even if two
+source refs collapse onto one target product.
 
 Defense tool data that's missing something reconciliation needs to safely act
 (e.g. a blank name) fails restore outright (`ErrIncompleteDefenseToolData`)
