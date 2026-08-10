@@ -1,4 +1,5 @@
 # @genqlient(for: "CreateDefenseToolProductDataInput.vendorId", omitempty: true, pointer:true)
+# @genqlient(for: "CreateDefenseToolProductDataInput.defenseLayerIds", omitempty: true)
 mutation CreateDefenseToolProduct(
   $input: CreateDefenseToolProductInput!
   ) {

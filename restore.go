@@ -282,8 +282,10 @@ func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string
 		return nil, fmt.Errorf("could not fetch defense tool products: %w", err)
 	}
 	productsByRef := make(map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, len(existingProductsResp.DefenseToolProducts.Nodes))
+	productsByName := make(map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, len(existingProductsResp.DefenseToolProducts.Nodes))
 	for _, p := range existingProductsResp.DefenseToolProducts.Nodes {
 		productsByRef[p.Ref] = p
+		productsByName[strings.ToLower(p.Name)] = p
 	}
 
 	existingLayersResp, err := dao.GetAllDefensiveLayers(ctx, client, db)
@@ -298,22 +300,36 @@ func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string
 		layersByName[strings.ToLower(l.Name)] = l
 	}
 
+	existingLibraryLayersResp, err := dao.GetAllLibraryDefensiveLayers(ctx, client)
+	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return nil, fmt.Errorf("could not fetch library defensive layers: %w", err)
+	}
+	libraryLayersByName := make(map[string]dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer, len(existingLibraryLayersResp.LibraryDefensivelayers.Nodes))
+	for _, l := range existingLibraryLayersResp.LibraryDefensivelayers.Nodes {
+		libraryLayersByName[strings.ToLower(l.Name)] = l
+	}
+
 	result := make(map[string]string, len(toolsToReconcile))
 	for key, ref := range toolsToReconcile {
 		if existing, ok := toolsByKey[key]; ok {
-			id, err := reconcileExistingDefenseTool(ctx, client, db, existing, ref, layersByName)
+			slog.DebugContext(ctx, "defense tool matched existing", "tool-name", ref.Name, "product-ref", ref.Product.Ref, "active", ref.Active, "target-tool-id", existing.Id)
+			id, err := reconcileExistingDefenseTool(ctx, client, db, existing, ref, layersByName, libraryLayersByName)
 			if err != nil {
 				return nil, err
 			}
 			result[key] = id
 			continue
 		}
+		slog.DebugContext(ctx, "defense tool has no existing match, resolving product/layers to create it", "tool-name", ref.Name, "product-ref", ref.Product.Ref, "active", ref.Active)
 
-		product, err := resolveOrCreateDefenseToolProduct(ctx, client, ref.Product, productsByRef)
+		product, err := resolveOrCreateDefenseToolProduct(ctx, client, ref.Product, productsByRef, productsByName, libraryLayersByName)
 		if err != nil {
 			return nil, err
 		}
-		layerIds, err := resolveOrCreateDefenseLayerIds(ctx, client, db, ref.Layers, layersByName)
+		layerIds, err := resolveOrCreateDefenseLayerIds(ctx, client, db, ref.Layers, layersByName, libraryLayersByName)
 		if err != nil {
 			return nil, err
 		}
@@ -337,7 +353,9 @@ func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string
 		if len(r.DefenseTool.Create.DefenseTools) == 0 {
 			return nil, fmt.Errorf("creating defense tool %q returned no tool", ref.Name)
 		}
-		result[key] = r.DefenseTool.Create.DefenseTools[0].Id
+		created := r.DefenseTool.Create.DefenseTools[0]
+		slog.DebugContext(ctx, "defense tool created", "tool-name", ref.Name, "product-id", product.Id, "target-tool-id", created.Id, "layer-ids", layerIds)
+		result[key] = created.Id
 	}
 	return result, nil
 }
@@ -346,7 +364,7 @@ func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string
 // lacks (creating layers as needed), leaving name/description/product/active
 // untouched -- those aren't part of the match criteria (see DefenseToolRef's
 // doc comment) so they're never overwritten on an already-matching tool.
-func reconcileExistingDefenseTool(ctx context.Context, client graphql.Client, db string, existing dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, ref DefenseToolRef, layersByName map[string]dao.GetAllDefensiveLayersDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer) (string, error) {
+func reconcileExistingDefenseTool(ctx context.Context, client graphql.Client, db string, existing dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, ref DefenseToolRef, layersByName map[string]dao.GetAllDefensiveLayersDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer, libraryLayersByName map[string]dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer) (string, error) {
 	have := make(map[string]bool, len(existing.DefensiveLayers))
 	layerIds := make([]string, 0, len(existing.DefensiveLayers))
 	for _, l := range existing.DefensiveLayers {
@@ -364,7 +382,7 @@ func reconcileExistingDefenseTool(ctx context.Context, client graphql.Client, db
 		return existing.Id, nil
 	}
 
-	newIds, err := resolveOrCreateDefenseLayerIds(ctx, client, db, missing, layersByName)
+	newIds, err := resolveOrCreateDefenseLayerIds(ctx, client, db, missing, layersByName, libraryLayersByName)
 	if err != nil {
 		return "", err
 	}
@@ -398,46 +416,114 @@ func reconcileExistingDefenseTool(ctx context.Context, client graphql.Client, db
 // layersByName is updated in place so later calls within the same
 // reconcileDefenseTools run reuse anything created here instead of creating
 // duplicates.
-func resolveOrCreateDefenseLayerIds(ctx context.Context, client graphql.Client, db string, names []string, layersByName map[string]dao.GetAllDefensiveLayersDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer) ([]string, error) {
+//
+// A db-scoped defense layer can't be created directly: VECTR's create
+// mutation for it also tries to create a same-named library-level layer as a
+// side effect, and errors outright if one already exists. So creating one
+// here instead resolves-or-creates the library-level layer first (via
+// libraryLayersByName/resolveOrCreateLibraryDefenseLayerIds, reusing one that
+// already exists) and clones that into the db scope, which is the supported
+// path regardless of whether the library layer pre-existed.
+func resolveOrCreateDefenseLayerIds(ctx context.Context, client graphql.Client, db string, names []string, layersByName map[string]dao.GetAllDefensiveLayersDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer, libraryLayersByName map[string]dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer) ([]string, error) {
 	ids := make([]string, 0, len(names))
 	for _, name := range names {
 		key := strings.ToLower(name)
 		if l, ok := layersByName[key]; ok {
+			slog.DebugContext(ctx, "defense layer matched existing", "layer-name", name, "target-layer-id", l.Id)
 			ids = append(ids, l.Id)
 			continue
 		}
-		r, err := dao.CreateDefenseLayer(ctx, client, dao.CreateDefenseLayerInput{
-			Db:               db,
-			DefenseLayerData: []dao.CreateDefenseLayerDataInput{{Name: name}},
+
+		libraryLayerIds, err := resolveOrCreateLibraryDefenseLayerIds(ctx, client, []DefenseLayer{{Name: name}}, libraryLayersByName)
+		if err != nil {
+			return nil, fmt.Errorf("could not resolve library defense layer to clone for defense layer %q: %w", name, err)
+		}
+
+		r, err := dao.CloneDefenseLayer(ctx, client, dao.CloneLibraryDefenseLayerInput{
+			Db:                     db,
+			LibraryDefenseLayerIds: libraryLayerIds,
 		})
 		if err != nil {
 			if gqlObject, ok := gqlErrParse(err); ok {
-				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject, "cache", layersByName)
 			}
 			return nil, fmt.Errorf("could not create defense layer %q: %w", name, err)
 		}
-		if len(r.DefenseLayer.Create.DefenseLayers) == 0 {
+		if len(r.DefenseLayer.Clone.DefenseLayers) == 0 {
 			return nil, fmt.Errorf("creating defense layer %q returned no layer", name)
 		}
-		created := r.DefenseLayer.Create.DefenseLayers[0]
+		created := r.DefenseLayer.Clone.DefenseLayers[0]
+		slog.DebugContext(ctx, "defense layer created", "layer-name", name, "target-layer-id", created.Id, "library-layer-id", libraryLayerIds[0])
 		layersByName[key] = dao.GetAllDefensiveLayersDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer{Id: created.Id, Name: created.Name}
 		ids = append(ids, created.Id)
 	}
 	return ids, nil
 }
 
-// resolveOrCreateDefenseToolProduct finds ref.Ref in productsByRef, creating
-// the product (and resolving its vendor by name, if any) if absent.
-// productsByRef is updated in place with anything created.
+// resolveOrCreateLibraryDefenseLayerIds returns the target instance's id for
+// each library defense layer (case-insensitive match on name), creating any
+// that don't already exist. libraryLayersByName is updated in place so later
+// calls within the same reconcileDefenseTools run reuse anything created here
+// instead of creating duplicates.
 //
-// Note: CreateDefenseToolProductDataInput has no ref field -- VECTR derives
-// ref itself, so a newly created product's ref may not equal the source's
-// ref. That's fine for this restore run (everything downstream uses the
-// created product's actual ref going forward); a later restore of the same
-// source data may not match this product by ref again -- an inherent
-// limitation of the create API, not something vat can control.
-func resolveOrCreateDefenseToolProduct(ctx context.Context, client graphql.Client, ref DefenseToolProductRef, productsByRef map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct) (dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, error) {
+// Library defense layers (attached to a DefenseToolProduct) are a distinct
+// resource from the db-scoped defense layers attached directly to a
+// DefenseTool (see resolveOrCreateDefenseLayerIds) -- they live in their own
+// id space even when names collide, so they're resolved and cached
+// separately rather than sharing layersByName.
+func resolveOrCreateLibraryDefenseLayerIds(ctx context.Context, client graphql.Client, layers []DefenseLayer, libraryLayersByName map[string]dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer) ([]string, error) {
+	ids := make([]string, 0, len(layers))
+	for _, layer := range layers {
+		key := strings.ToLower(layer.Name)
+		if l, ok := libraryLayersByName[key]; ok {
+			slog.DebugContext(ctx, "library defense layer matched existing", "layer-name", layer.Name, "target-layer-id", l.Id)
+			ids = append(ids, l.Id)
+			continue
+		}
+		r, err := dao.CreateLibraryDefenseLayer(ctx, client, dao.CreateLibraryDefenseLayerInput{
+			DefenseLayerData: []dao.CreateLibraryDefenseLayerDataInput{{Name: layer.Name, Description: layer.Description}},
+		})
+		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+			}
+			return nil, fmt.Errorf("could not create library defense layer %q: %w", layer.Name, err)
+		}
+		if len(r.DefenseLayer.CreateLibrary.DefenseLayers) == 0 {
+			return nil, fmt.Errorf("creating library defense layer %q returned no layer", layer.Name)
+		}
+		created := r.DefenseLayer.CreateLibrary.DefenseLayers[0]
+		slog.DebugContext(ctx, "library defense layer created", "layer-name", layer.Name, "target-layer-id", created.Id)
+		libraryLayersByName[key] = dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer{Id: created.Id, Name: created.Name}
+		ids = append(ids, created.Id)
+	}
+	return ids, nil
+}
+
+// resolveOrCreateDefenseToolProduct finds ref's matching product, creating
+// it (and resolving its vendor by name and library defense layers, if any)
+// if absent. productsByRef and productsByName are updated in place with
+// anything created.
+//
+// Matching tries ref.Ref first, then falls back to a case-insensitive name
+// match: CreateDefenseToolProductDataInput has no ref field, VECTR derives
+// ref itself on create, so a newly created product's ref may not equal the
+// source's ref -- a later restore of the same source data would never match
+// it by ref again. Name is the durable fallback for that case. When the name
+// fallback matches, productsByRef is also backfilled under ref.Ref so later
+// refs in this same run pointing at this product hit the fast path.
+//
+// If a product already exists (by either match), it's taken as-is -- its
+// layers are never diffed or backfilled here (unlike
+// reconcileExistingDefenseTool's handling of a tool's own db-scoped layers).
+func resolveOrCreateDefenseToolProduct(ctx context.Context, client graphql.Client, ref DefenseToolProductRef, productsByRef map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, productsByName map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, libraryLayersByName map[string]dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer) (dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, error) {
 	if p, ok := productsByRef[ref.Ref]; ok {
+		slog.DebugContext(ctx, "defense tool product matched existing by ref", "product-name", ref.Name, "product-ref", ref.Ref, "target-product-id", p.Id)
+		return p, nil
+	}
+	if p, ok := productsByName[strings.ToLower(ref.Name)]; ok {
+		slog.DebugContext(ctx, "defense tool product matched existing by name fallback (ref mismatch)", "product-name", ref.Name, "source-ref", ref.Ref, "target-product-id", p.Id, "target-product-ref", p.Ref)
+		productsByRef[ref.Ref] = p
 		return p, nil
 	}
 
@@ -450,18 +536,24 @@ func resolveOrCreateDefenseToolProduct(ctx context.Context, client graphql.Clien
 			}
 			return dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct{}, fmt.Errorf("could not look up vendor %q: %w", ref.VendorName, err)
 		}
-		if len(vr.Vendors.Nodes) > 0 {
-			id := vr.Vendors.Nodes[0].Id
+		if len(vr.LibraryVendors.Nodes) > 0 {
+			id := vr.LibraryVendors.Nodes[0].Id
 			vendorId = &id
 		} else {
 			slog.WarnContext(ctx, "vendor not found in target instance, creating defense tool product without a vendor", "vendor-name", ref.VendorName, "product-ref", ref.Ref)
 		}
 	}
 
+	layerIds, err := resolveOrCreateLibraryDefenseLayerIds(ctx, client, ref.Layers, libraryLayersByName)
+	if err != nil {
+		return dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct{}, fmt.Errorf("could not resolve library defense layers for product %q (source ref %q): %w", ref.Name, ref.Ref, err)
+	}
+
 	r, err := dao.CreateDefenseToolProduct(ctx, client, dao.CreateDefenseToolProductInput{
 		DefenseToolProducts: []dao.CreateDefenseToolProductDataInput{{
-			Name:     ref.Name,
-			VendorId: vendorId,
+			Name:            ref.Name,
+			VendorId:        vendorId,
+			DefenseLayerIds: layerIds,
 		}},
 	})
 	if err != nil {
@@ -479,7 +571,9 @@ func resolveOrCreateDefenseToolProduct(ctx context.Context, client graphql.Clien
 		Name: created.Name,
 		Ref:  created.Ref,
 	}
+	slog.DebugContext(ctx, "defense tool product created", "product-name", ref.Name, "source-ref", ref.Ref, "target-product-id", product.Id, "target-product-ref", product.Ref, "vendor-id", vendorId, "layer-ids", layerIds)
 	productsByRef[product.Ref] = product
+	productsByName[strings.ToLower(product.Name)] = product
 	return product, nil
 }
 

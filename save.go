@@ -244,6 +244,10 @@ func toDefenseToolRef(bt dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesB
 	for _, l := range bt.DefensiveLayers {
 		layers = append(layers, l.Name)
 	}
+	productLayers := make([]DefenseLayer, 0, len(bt.DefenseToolProduct.DefensiveLayers))
+	for _, l := range bt.DefenseToolProduct.DefensiveLayers {
+		productLayers = append(productLayers, DefenseLayer{Name: l.Name, Description: l.Description})
+	}
 	return DefenseToolRef{
 		Name:        bt.Name,
 		Description: bt.Description,
@@ -253,6 +257,7 @@ func toDefenseToolRef(bt dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesB
 			Ref:        bt.DefenseToolProduct.Ref,
 			Name:       bt.DefenseToolProduct.Name,
 			VendorName: bt.DefenseToolProduct.Vendor.Name,
+			Layers:     productLayers,
 		},
 	}
 }

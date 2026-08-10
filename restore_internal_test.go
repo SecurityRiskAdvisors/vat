@@ -176,16 +176,24 @@ func TestGroupedCreateTestCaseWithLibraryIdInput_Batching(t *testing.T) {
 }
 
 // scriptedGraphQLClient serves a fixed JSON response per operation name, and
-// records every operation it's asked to serve -- enough to drive
-// reconcileDefenseTools through a specific branch and assert which
-// create/update mutations it did (or didn't) call.
+// records every operation it's asked to serve -- along with the variables it
+// was sent -- enough to drive reconcileDefenseTools through a specific
+// branch and assert which create/update mutations it did (or didn't) call,
+// and with what input.
 type scriptedGraphQLClient struct {
 	responses map[string]json.RawMessage
 	calls     []string
+	variables map[string]json.RawMessage
 }
 
 func (s *scriptedGraphQLClient) MakeRequest(_ context.Context, req *graphql.Request, resp *graphql.Response) error {
 	s.calls = append(s.calls, req.OpName)
+	if raw, err := json.Marshal(req.Variables); err == nil {
+		if s.variables == nil {
+			s.variables = make(map[string]json.RawMessage)
+		}
+		s.variables[req.OpName] = raw
+	}
 	raw, ok := s.responses[req.OpName]
 	if !ok {
 		return fmt.Errorf("scriptedGraphQLClient: no stubbed response for operation %q", req.OpName)
@@ -236,6 +244,7 @@ const existingToolsResponse = `{
 const emptyProductsResponse = `{"defenseToolProducts": {"nodes": []}}`
 const emptyLayersResponse = `{"defensivelayers": {"nodes": []}}`
 const singleEndpointLayerResponse = `{"defensivelayers": {"nodes": [{"id": "target-layer-endpoint", "name": "Endpoint"}]}}`
+const emptyLibraryLayersResponse = `{"libraryDefensivelayers": {"nodes": []}}`
 
 // TestReconcileDefenseTools_CleanMatch verifies that a source tool matching
 // an existing target tool on name+product ref+active, with no layers
@@ -244,9 +253,10 @@ const singleEndpointLayerResponse = `{"defensivelayers": {"nodes": [{"id": "targ
 // tool's id.
 func TestReconcileDefenseTools_CleanMatch(t *testing.T) {
 	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
-		"GetAllDefenseTools":        json.RawMessage(existingToolsResponse),
-		"GetAllDefenseToolProducts": json.RawMessage(emptyProductsResponse),
-		"GetAllDefensiveLayers":     json.RawMessage(emptyLayersResponse),
+		"GetAllDefenseTools":           json.RawMessage(existingToolsResponse),
+		"GetAllDefenseToolProducts":    json.RawMessage(emptyProductsResponse),
+		"GetAllDefensiveLayers":        json.RawMessage(emptyLayersResponse),
+		"GetAllLibraryDefensiveLayers": json.RawMessage(emptyLibraryLayersResponse),
 	}}
 
 	result, err := reconcileDefenseTools(context.Background(), client, "test-db", map[string]DefenseToolRef{
@@ -273,11 +283,15 @@ func TestReconcileDefenseTools_MissingLayers(t *testing.T) {
 	ref.Layers = []string{"Endpoint", "Network"}
 
 	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
-		"GetAllDefenseTools":        json.RawMessage(existingToolsResponse),
-		"GetAllDefenseToolProducts": json.RawMessage(emptyProductsResponse),
-		"GetAllDefensiveLayers":     json.RawMessage(emptyLayersResponse),
-		"CreateDefenseLayer": json.RawMessage(`{
-			"defenseLayer": {"create": {"defenseLayers": [{"id": "target-layer-network", "name": "Network"}]}}
+		"GetAllDefenseTools":           json.RawMessage(existingToolsResponse),
+		"GetAllDefenseToolProducts":    json.RawMessage(emptyProductsResponse),
+		"GetAllDefensiveLayers":        json.RawMessage(emptyLayersResponse),
+		"GetAllLibraryDefensiveLayers": json.RawMessage(emptyLibraryLayersResponse),
+		"CreateLibraryDefenseLayer": json.RawMessage(`{
+			"defenseLayer": {"createLibrary": {"defenseLayers": [{"id": "target-library-layer-network", "name": "Network"}]}}
+		}`),
+		"CloneDefenseLayer": json.RawMessage(`{
+			"defenseLayer": {"clone": {"defenseLayers": [{"id": "target-layer-network", "name": "Network"}]}}
 		}`),
 		"UpdateDefenseTool": json.RawMessage(`{
 			"defenseTool": {"update": {"defenseTools": [{
@@ -303,7 +317,7 @@ func TestReconcileDefenseTools_MissingLayers(t *testing.T) {
 	if got := result[ref.Key()]; got != "target-tool-1" {
 		t.Errorf("resolved id = %q, want %q", got, "target-tool-1")
 	}
-	if !client.called("CreateDefenseLayer") {
+	if !client.called("CloneDefenseLayer") {
 		t.Error("expected the missing layer to be created")
 	}
 	if !client.called("UpdateDefenseTool") {
@@ -332,11 +346,12 @@ func TestReconcileDefenseTools_NoMatch(t *testing.T) {
 	}
 
 	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
-		"GetAllDefenseTools":        json.RawMessage(existingToolsResponse),
-		"GetAllDefenseToolProducts": json.RawMessage(emptyProductsResponse),
-		"GetAllDefensiveLayers":     json.RawMessage(singleEndpointLayerResponse),
+		"GetAllDefenseTools":           json.RawMessage(existingToolsResponse),
+		"GetAllDefenseToolProducts":    json.RawMessage(emptyProductsResponse),
+		"GetAllDefensiveLayers":        json.RawMessage(singleEndpointLayerResponse),
+		"GetAllLibraryDefensiveLayers": json.RawMessage(emptyLibraryLayersResponse),
 		"FindVendor": json.RawMessage(`{
-			"vendors": {"nodes": [{"id": "target-vendor-1", "name": "CrowdStrike"}]}
+			"libraryVendors": {"nodes": [{"id": "target-vendor-1", "name": "CrowdStrike"}]}
 		}`),
 		"CreateDefenseToolProduct": json.RawMessage(`{
 			"defenseToolProduct": {"create": {"defenseToolProducts": [
@@ -372,6 +387,171 @@ func TestReconcileDefenseTools_NoMatch(t *testing.T) {
 	}
 	if client.called("UpdateDefenseTool") {
 		t.Error("expected no update to the unrelated existing tool")
+	}
+
+	var vars struct {
+		Input dao.CreateDefenseToolProductInput `json:"input"`
+	}
+	if err := json.Unmarshal(client.variables["CreateDefenseToolProduct"], &vars); err != nil {
+		t.Fatalf("could not decode CreateDefenseToolProduct variables: %v", err)
+	}
+	if len(vars.Input.DefenseToolProducts) != 1 {
+		t.Fatalf("expected exactly one defense tool product input, got %d", len(vars.Input.DefenseToolProducts))
+	}
+	if got := vars.Input.DefenseToolProducts[0].VendorId; got == nil || *got != "target-vendor-1" {
+		t.Errorf("CreateDefenseToolProduct vendorId = %v, want %q", got, "target-vendor-1")
+	}
+}
+
+// TestReconcileDefenseTools_NewProductWithLibraryLayers verifies that
+// creating a new defense tool product resolves its library defense layers
+// (creating any that don't already exist in the target instance) and passes
+// their ids as defenseLayerIds on the product create -- distinct from, and
+// never mixed with, the tool's own db-scoped layer ids.
+func TestReconcileDefenseTools_NewProductWithLibraryLayers(t *testing.T) {
+	ref := DefenseToolRef{
+		Name:        "Falcon Sensor",
+		Description: "Next-gen AV",
+		Active:      true,
+		Layers:      []string{"Endpoint"},
+		Product: DefenseToolProductRef{
+			Ref:        "crowdstrike-falcon-ngav",
+			Name:       "Falcon NGAV",
+			VendorName: "",
+			Layers: []DefenseLayer{
+				{Name: "Prevention", Description: "Preventative controls"},
+			},
+		},
+	}
+
+	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
+		"GetAllDefenseTools":           json.RawMessage(existingToolsResponse),
+		"GetAllDefenseToolProducts":    json.RawMessage(emptyProductsResponse),
+		"GetAllDefensiveLayers":        json.RawMessage(singleEndpointLayerResponse),
+		"GetAllLibraryDefensiveLayers": json.RawMessage(emptyLibraryLayersResponse),
+		"CreateLibraryDefenseLayer": json.RawMessage(`{
+			"defenseLayer": {"createLibrary": {"defenseLayers": [{"id": "target-library-layer-prevention", "name": "Prevention"}]}}
+		}`),
+		"CreateDefenseToolProduct": json.RawMessage(`{
+			"defenseToolProduct": {"create": {"defenseToolProducts": [
+				{"id": "target-product-2", "name": "Falcon NGAV", "ref": "crowdstrike-falcon-ngav"}
+			]}}
+		}`),
+		"CreateDefenseTool": json.RawMessage(`{
+			"defenseTool": {"create": {"defenseTools": [{
+				"id": "target-tool-2",
+				"name": "Falcon Sensor",
+				"active": true,
+				"description": "Next-gen AV",
+				"defenseToolProduct": {"id": "target-product-2", "ref": "crowdstrike-falcon-ngav"},
+				"defensiveLayers": [{"id": "target-layer-endpoint", "name": "Endpoint"}]
+			}]}}
+		}`),
+	}}
+
+	result, err := reconcileDefenseTools(context.Background(), client, "test-db", map[string]DefenseToolRef{
+		ref.Key(): ref,
+	})
+	if err != nil {
+		t.Fatalf("reconcileDefenseTools returned an error: %v", err)
+	}
+	if got := result[ref.Key()]; got != "target-tool-2" {
+		t.Errorf("resolved id = %q, want %q", got, "target-tool-2")
+	}
+	if !client.called("CreateLibraryDefenseLayer") {
+		t.Error("expected the missing library defense layer to be created")
+	}
+
+	var productVars struct {
+		Input dao.CreateDefenseToolProductInput `json:"input"`
+	}
+	if err := json.Unmarshal(client.variables["CreateDefenseToolProduct"], &productVars); err != nil {
+		t.Fatalf("could not decode CreateDefenseToolProduct variables: %v", err)
+	}
+	if len(productVars.Input.DefenseToolProducts) != 1 {
+		t.Fatalf("expected exactly one defense tool product input, got %d", len(productVars.Input.DefenseToolProducts))
+	}
+	if got := productVars.Input.DefenseToolProducts[0].DefenseLayerIds; !slices.Equal(got, []string{"target-library-layer-prevention"}) {
+		t.Errorf("CreateDefenseToolProduct defenseLayerIds = %v, want %v", got, []string{"target-library-layer-prevention"})
+	}
+
+	var toolVars struct {
+		Input dao.CreateDefenseToolInput `json:"input"`
+	}
+	if err := json.Unmarshal(client.variables["CreateDefenseTool"], &toolVars); err != nil {
+		t.Fatalf("could not decode CreateDefenseTool variables: %v", err)
+	}
+	if len(toolVars.Input.CreateDefenseToolData) != 1 {
+		t.Fatalf("expected exactly one defense tool input, got %d", len(toolVars.Input.CreateDefenseToolData))
+	}
+	if got := toolVars.Input.CreateDefenseToolData[0].DefenseLayerIds; slices.Contains(got, "target-library-layer-prevention") {
+		t.Errorf("expected the tool's own defenseLayerIds to never include the product's library layer id, got %v", got)
+	}
+}
+
+// TestReconcileDefenseTools_ProductMatchByNameFallback verifies that when a
+// source product's ref doesn't match any existing product (VECTR derives ref
+// itself on create, so it isn't stable across restores of the same source
+// data), reconcileDefenseTools falls back to a case-insensitive name match
+// instead of creating a duplicate product.
+func TestReconcileDefenseTools_ProductMatchByNameFallback(t *testing.T) {
+	ref := DefenseToolRef{
+		Name:        "Falcon Sensor",
+		Description: "Next-gen AV",
+		Active:      true,
+		Layers:      []string{"Endpoint"},
+		Product: DefenseToolProductRef{
+			Ref:        "new-ref-from-this-restore",
+			Name:       "falcon ngav", // differs in case from the existing product's name
+			VendorName: "",
+		},
+	}
+
+	existingProductsWithDifferentRef := `{"defenseToolProducts": {"nodes": [
+		{"id": "existing-product-99", "name": "Falcon NGAV", "ref": "old-ref-from-a-prior-restore"}
+	]}}`
+
+	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
+		"GetAllDefenseTools":           json.RawMessage(existingToolsResponse),
+		"GetAllDefenseToolProducts":    json.RawMessage(existingProductsWithDifferentRef),
+		"GetAllDefensiveLayers":        json.RawMessage(singleEndpointLayerResponse),
+		"GetAllLibraryDefensiveLayers": json.RawMessage(emptyLibraryLayersResponse),
+		"CreateDefenseTool": json.RawMessage(`{
+			"defenseTool": {"create": {"defenseTools": [{
+				"id": "target-tool-2",
+				"name": "Falcon Sensor",
+				"active": true,
+				"description": "Next-gen AV",
+				"defenseToolProduct": {"id": "existing-product-99", "ref": "old-ref-from-a-prior-restore"},
+				"defensiveLayers": [{"id": "target-layer-endpoint", "name": "Endpoint"}]
+			}]}}
+		}`),
+	}}
+
+	result, err := reconcileDefenseTools(context.Background(), client, "test-db", map[string]DefenseToolRef{
+		ref.Key(): ref,
+	})
+	if err != nil {
+		t.Fatalf("reconcileDefenseTools returned an error: %v", err)
+	}
+	if got := result[ref.Key()]; got != "target-tool-2" {
+		t.Errorf("resolved id = %q, want %q", got, "target-tool-2")
+	}
+	if client.called("CreateDefenseToolProduct") {
+		t.Error("expected the existing product to be reused via name fallback, not recreated")
+	}
+
+	var toolVars struct {
+		Input dao.CreateDefenseToolInput `json:"input"`
+	}
+	if err := json.Unmarshal(client.variables["CreateDefenseTool"], &toolVars); err != nil {
+		t.Fatalf("could not decode CreateDefenseTool variables: %v", err)
+	}
+	if len(toolVars.Input.CreateDefenseToolData) != 1 {
+		t.Fatalf("expected exactly one defense tool input, got %d", len(toolVars.Input.CreateDefenseToolData))
+	}
+	if got := toolVars.Input.CreateDefenseToolData[0].DefenseToolProductId; got != "existing-product-99" {
+		t.Errorf("CreateDefenseTool defenseToolProductId = %q, want %q", got, "existing-product-99")
 	}
 }
 

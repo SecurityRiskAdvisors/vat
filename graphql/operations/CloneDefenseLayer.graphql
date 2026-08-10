@@ -1,0 +1,12 @@
+mutation CloneDefenseLayer(
+  $input: CloneLibraryDefenseLayerInput!
+  ) {
+  defenseLayer {
+    clone(input: $input) {
+      defenseLayers {
+        id
+        name
+      }
+    }
+  }
+}

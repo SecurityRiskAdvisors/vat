@@ -35,6 +35,15 @@ type DefenseToolProductRef struct {
 	Ref        string
 	Name       string
 	VendorName string
+	Layers     []DefenseLayer
+}
+
+// DefenseLayerRef is the defense layer of the associated product
+// Since they are getting created in the instance, we'll create with
+// all of the appropriate metadata.
+type DefenseLayer struct {
+	Name        string
+	Description string
 }
 
 // Key is the composite identity restore uses to decide whether a target
