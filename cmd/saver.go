@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -50,13 +49,15 @@ var saveCmd = &cobra.Command{
 		// Read credentials from the file
 		credentials, err := os.ReadFile(credentialsFile)
 		if err != nil {
-			log.Fatalf("Failed to read VECTR credentials file: %v", err)
+			slog.ErrorContext(ctx, "Failed to read VECTR credentials file", "error", err)
+			os.Exit(1)
 		}
 
 		// Set up the VECTR client
 		client, vectrRestApiCaller, err := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), tlsParams)
 		if err != nil {
 			slog.ErrorContext(ctx, "could not set up connection to vectr", "hostname", hostname, "error", err)
+			os.Exit(1)
 		}
 
 		// get the VECTR version (side effect - check the creds as well)
@@ -83,13 +84,15 @@ var saveCmd = &cobra.Command{
 		// Serialize the data to JSON
 		jsonData, err := vat.EncodeToJson(data)
 		if err != nil {
-			log.Fatalf("Failed to encode assessment data to JSON: %v", err)
+			slog.ErrorContext(ctx, "Failed to encode assessment data to JSON", "error", err)
+			os.Exit(1)
 		}
 
 		// Generate a secure random passphrase
 		passphrase, err := generateRandomPassphrase() // 32 bytes = 256 bits
 		if err != nil {
-			log.Fatalf("Failed to generate random passphrase: %v", err)
+			slog.ErrorContext(ctx, "Failed to generate random passphrase", "error", err)
+			os.Exit(1)
 		}
 
 		// Output the passphrase to stdout
@@ -98,19 +101,22 @@ var saveCmd = &cobra.Command{
 		// Create the output file
 		outputFileHandle, err := os.Create(outputFile)
 		if err != nil {
-			log.Fatalf("Failed to create output file: %v", err)
+			slog.ErrorContext(ctx, "Failed to create output file", "error", err)
+			os.Exit(1)
 		}
 		defer outputFileHandle.Close()
 
 		// Encrypt the data using the age package
 		recipient, err := age.NewScryptRecipient(passphrase)
 		if err != nil {
-			log.Fatalf("Failed to create scrypt recipient: %v", err)
+			slog.ErrorContext(ctx, "Failed to create scrypt recipient", "error", err)
+			os.Exit(1)
 		}
 
 		encryptor, err := age.Encrypt(outputFileHandle, recipient)
 		if err != nil {
-			log.Fatalf("Failed to initialize encryption: %v", err)
+			slog.ErrorContext(ctx, "Failed to initialize encryption", "error", err)
+			os.Exit(1)
 		}
 		defer encryptor.Close()
 
@@ -120,18 +126,23 @@ var saveCmd = &cobra.Command{
 
 		_, err = gzipWriter.Write(jsonData)
 		if err != nil {
-			log.Fatalf("Failed to write compressed data: %v", err)
+			slog.ErrorContext(ctx, "Failed to write compressed data", "error", err)
+			os.Exit(1)
+		}
+
+		if disableBundle {
+			slog.DebugContext(ctx, "--disable-bundle set, skipping isv download", "assessment-name", assessmentName)
 		}
 
 		if !(disableBundle || data.BundleID == "") {
 			isv, err := vectrRestApiCaller.GetIsv(ctx, data.BundleID)
 			if err != nil {
-				slog.ErrorContext(ctx, "could not save isv, you will have to do it manually", "test-plan-name", data.TemplateAssessment, "hostname", hostname, "db", db, "assessment-name", assessmentName)
+				slog.WarnContext(ctx, "could not save isv, you will have to do it manually", "test-plan-name", data.TemplateAssessment, "hostname", hostname, "db", db, "assessment-name", assessmentName)
 			} else {
 				isvPath := fmt.Sprintf("%s.%s.isv", outputFile, data.BundleID)
 				err := os.WriteFile(isvPath, isv, 0666)
 				if err != nil {
-					slog.ErrorContext(ctx, "could not write isv file, you'll have to clean up and do it manually",
+					slog.WarnContext(ctx, "could not write isv file, you'll have to clean up and do it manually",
 						"file-name", isvPath,
 						"test-plan-name", data.TemplateAssessment,
 						"hostname", hostname,
@@ -143,6 +154,8 @@ var saveCmd = &cobra.Command{
 				}
 			}
 		}
+
+		slog.InfoContext(ctx, "Assessment saved successfully", "assessment-name", assessmentName, "db", db, "output-file", outputFile)
 
 		fmt.Printf("Assessment data saved, compressed, and encrypted to %s\n", outputFile)
 		fmt.Println("Next steps:")

@@ -67,7 +67,12 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		return nil, fmt.Errorf("error searching %s, %w", assessment_name, err)
 	}
 
-	return saveAssessment(ctx, client, assessment.Assessments.Nodes[0], data, db)
+	result, err := saveAssessment(ctx, client, assessment.Assessments.Nodes[0], data, db)
+	if err != nil {
+		return nil, err
+	}
+	slog.InfoContext(ctx, "Finished saving assessment", "assessment-name", assessment_name, "db", db)
+	return result, nil
 }
 
 // saveAssessment processes the assessment data and fetches associated library test cases and defense tools.
@@ -230,7 +235,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 		}
 	}
 
-	slog.InfoContext(ctx, "Finished dumping assessment", "date", data.Manifest.Created, "vat-version", data.Manifest.VatVersion, "assessment-name", data.Assessment.Name, "db", db)
+	slog.DebugContext(ctx, "Finished dumping assessment", "date", data.Manifest.Created, "vat-version", data.Manifest.VatVersion, "assessment-name", data.Assessment.Name, "db", db)
 
 	return data, nil
 

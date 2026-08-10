@@ -54,6 +54,7 @@ var dumpCmd = &cobra.Command{
 		client, vectrVersionHandler, err := util.SetupVectrClient(hostname, strings.TrimSpace(string(credentials)), tlsParams)
 		if err != nil {
 			slog.Error("could not set up connection to vectr", "hostname", hostname, "error", err)
+			os.Exit(1)
 		}
 
 		// Get the VECTR version (side effect - check the creds as well)
@@ -117,7 +118,7 @@ var dumpCmd = &cobra.Command{
 		// Process each assessment
 		for _, entry := range dumpedData {
 			if entry.Err != nil {
-				slog.Error("Error dumping assessment", "db", entry.Db, "assessment", entry.AssessmentName, "error", entry.Err)
+				slog.Warn("Error dumping assessment", "db", entry.Db, "assessment", entry.AssessmentName, "error", entry.Err)
 				continue
 			}
 			subdir := filepath.Join(outputDir, entry.Db)
@@ -129,14 +130,14 @@ var dumpCmd = &cobra.Command{
 			// Serialize the assessment data to JSON
 			jsonData, err := vat.EncodeToJson(entry.Ad)
 			if err != nil {
-				slog.Error("Failed to encode assessment data to JSON", "assessment", entry.AssessmentName, "error", err)
+				slog.Warn("Failed to encode assessment data to JSON", "assessment", entry.AssessmentName, "error", err)
 				continue
 			}
 
 			// Generate a secure random passphrase
 			passphrase, err := generateRandomPassphrase()
 			if err != nil {
-				slog.Error("Failed to generate random passphrase", "assessment", entry.AssessmentName, "error", err)
+				slog.Warn("Failed to generate random passphrase", "assessment", entry.AssessmentName, "error", err)
 				continue
 			}
 
@@ -146,14 +147,14 @@ var dumpCmd = &cobra.Command{
 
 			// Write the passphrase to a file
 			if err := os.WriteFile(passphraseFilePath, []byte(passphrase), 0600); err != nil {
-				slog.Error("Failed to write passphrase file", "assessment", entry.AssessmentName, "error", err)
+				slog.Warn("Failed to write passphrase file", "assessment", entry.AssessmentName, "error", err)
 				continue
 			}
 
 			// Create the output file
 			outputFileHandle, err := os.Create(outputFilePath)
 			if err != nil {
-				slog.Error("Failed to create output file", "assessment", entry.AssessmentName, "error", err)
+				slog.Warn("Failed to create output file", "assessment", entry.AssessmentName, "error", err)
 				continue
 			}
 			defer outputFileHandle.Close()
@@ -161,13 +162,13 @@ var dumpCmd = &cobra.Command{
 			// Encrypt the data using the age package
 			recipient, err := age.NewScryptRecipient(passphrase)
 			if err != nil {
-				slog.Error("Failed to create scrypt recipient", "assessment", entry.AssessmentName, "error", err)
+				slog.Warn("Failed to create scrypt recipient", "assessment", entry.AssessmentName, "error", err)
 				continue
 			}
 
 			encryptor, err := age.Encrypt(outputFileHandle, recipient)
 			if err != nil {
-				slog.Error("Failed to initialize encryption", "assessment", entry.AssessmentName, "error", err)
+				slog.Warn("Failed to initialize encryption", "assessment", entry.AssessmentName, "error", err)
 				continue
 			}
 			defer encryptor.Close()
@@ -178,7 +179,7 @@ var dumpCmd = &cobra.Command{
 
 			_, err = gzipWriter.Write(jsonData)
 			if err != nil {
-				slog.Error("Failed to write compressed data", "assessment", entry.AssessmentName, "error", err)
+				slog.Warn("Failed to write compressed data", "assessment", entry.AssessmentName, "error", err)
 				continue
 			}
 
@@ -188,7 +189,7 @@ var dumpCmd = &cobra.Command{
 				if _, ok := isvCache[entry.Ad.BundleID]; !ok {
 					isv, err := vectrVersionHandler.GetIsv(ctx, entry.Ad.BundleID)
 					if err != nil {
-						slog.ErrorContext(ctx, "could not save isv, you will have to do it manually", "test-plan-name", entry.Ad.TemplateAssessment, "hostname", hostname, "db", entry.Db, "assessment-name", entry.AssessmentName)
+						slog.WarnContext(ctx, "could not save isv, you will have to do it manually", "test-plan-name", entry.Ad.TemplateAssessment, "hostname", hostname, "db", entry.Db, "assessment-name", entry.AssessmentName)
 					} else {
 						isvCache[entry.Ad.BundleID] = make([]byte, len(isv))
 						copy(isvCache[entry.Ad.BundleID], isv) // cache the isv data
@@ -199,7 +200,7 @@ var dumpCmd = &cobra.Command{
 					isvPath = fmt.Sprintf("%s.%s.isv", outputFilePath, entry.Ad.BundleID)
 					err := os.WriteFile(isvPath, isv, 0666)
 					if err != nil {
-						slog.ErrorContext(ctx, "could not write isv file, you'll have to clean up and do it manually",
+						slog.WarnContext(ctx, "could not write isv file, you'll have to clean up and do it manually",
 							"file-name", isvPath,
 							"test-plan-name", entry.Ad.TemplateAssessment,
 							"hostname", hostname,
@@ -210,7 +211,7 @@ var dumpCmd = &cobra.Command{
 						slog.Info("Successfully wrote isv bundle file", "file-path", isvPath)
 					}
 				} else {
-					slog.ErrorContext(ctx, "could not find associated isv", "test-plan-name", entry.Ad.TemplateAssessment, "hostname", hostname, "db", entry.Db, "assessment-name", entry.AssessmentName)
+					slog.WarnContext(ctx, "could not find associated isv", "test-plan-name", entry.Ad.TemplateAssessment, "hostname", hostname, "db", entry.Db, "assessment-name", entry.AssessmentName)
 				}
 			}
 

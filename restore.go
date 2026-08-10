@@ -998,7 +998,7 @@ func restoreCampaigns(
 				if len(errmsg.Errors) > 0 {
 					for _, te := range timelineEventInsert.Events {
 						if strings.EqualFold(errmsg.ClientId, te.ClientId) {
-							slog.WarnContext(ctx, "failed to create timeline event",
+							slog.ErrorContext(ctx, "failed to create timeline event",
 								"assessment-name", assessmentName,
 								"campaign_name", c.Name,
 								"client-id", te.ClientId,
@@ -1195,7 +1195,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	// Step 3: Check if there is a template name in the seralized data, if so check in the instance (error if not)
 	// If the user wants to ignore error, go ahead and import template test cases
 	// If no template name, then go ahead and add template test cases in
-	if !optionalParams.ForceEnvOnly {
+	if optionalParams.ForceEnvOnly {
+		slog.WarnContext(ctx, "--force-env-only set, skipping template/library test case validation", "assessment-name", ad.Assessment.Name)
+	} else {
 		if optionalParams.OverrideAssessmentTemplate {
 			slog.DebugContext(ctx, "adding template test cases directly")
 			input := dao.CreateTestCaseTemplateInput{
@@ -1384,6 +1386,9 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 
 	targetAssessment, err := dao.FindExistingAssessment(ctx, client, db, targetAssessmentName)
 	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
 		return fmt.Errorf("could not look up target assessment '%s': %w", targetAssessmentName, err)
 	}
 	if len(targetAssessment.Assessments.Nodes) == 0 {
@@ -1399,7 +1404,9 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 		}
 	}
 
-	if !optionalParams.ForceEnvOnly {
+	if optionalParams.ForceEnvOnly {
+		slog.WarnContext(ctx, "--force-env-only set, skipping library test case validation", "assessment-name", ad.Assessment.Name, "campaign-name", sourceCampaignName)
+	} else {
 		if err := validateLibraryTestCases(ctx, client, libraryTestCaseIDs, ad.TemplateAssessment); err != nil {
 			return err
 		}
