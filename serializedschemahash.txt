@@ -964,6 +964,13 @@ Name
 string
 Product
 vat.DefenseToolProductRef
+Layers
+[]vat.DefenseLayer
+vat.DefenseLayer
+Description
+string
+Name
+string
 Name
 string
 Ref
@@ -1212,10 +1219,17 @@ Name
 string
 Product
 vat.DefenseToolProductRef
+Layers
+[]vat.DefenseLayer
+vat.DefenseLayer
+Description
+string
+Name
+string
 Name
 string
 Ref
 string
 VendorName
 string
-finalized: 1eb79d0f0e8ac4475ac364f7d2cc2b588e3d6ae8673cbe81d8e6f145f029b1c8
+finalized: e07faa01477d8b2311538d653a5e0e2ac4bee377305fd62d0cea0528590a01f0

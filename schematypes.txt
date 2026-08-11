@@ -8,6 +8,9 @@ input AttackAutomationVariable (used in: CreateTemplateTestCases, CreateTestCase
   inputName: String!
   inputValue: String!
   type: AutomationVarType
+input CloneLibraryDefenseLayerInput (used in: CloneDefenseLayer)
+  db: String!
+  libraryDefenseLayerIds: [String!]
 input CreateAssessmentDataInput (used in: CreateAssessment)
   dataVer: Int
   description: String
@@ -28,13 +31,6 @@ input CreateCampaignInput (used in: CreateCampaigns)
   assessmentId: String!
   campaignData: [CreateCampaignDataInput!]!
   db: String!
-input CreateDefenseLayerDataInput (used in: CreateDefenseLayer)
-  description: String
-  icon: String
-  name: String!
-input CreateDefenseLayerInput (used in: CreateDefenseLayer)
-  db: String!
-  defenseLayerData: [CreateDefenseLayerDataInput!]
 input CreateDefenseToolDataInput (used in: CreateDefenseTool)
   active: Boolean
   defenseLayerIds: [String!]
@@ -52,6 +48,12 @@ input CreateDefenseToolProductDataInput (used in: CreateDefenseToolProduct)
   vendorId: String
 input CreateDefenseToolProductInput (used in: CreateDefenseToolProduct)
   defenseToolProducts: [CreateDefenseToolProductDataInput]
+input CreateLibraryDefenseLayerDataInput (used in: CreateLibraryDefenseLayer)
+  description: String
+  icon: String
+  name: String!
+input CreateLibraryDefenseLayerInput (used in: CreateLibraryDefenseLayer)
+  defenseLayerData: [CreateLibraryDefenseLayerDataInput!]
 input CreateTestCaseAndTemplateMatchByNameInput (used in: CreateTestCases)
   campaignId: String!
   createTestCaseInputs: [CreateTestCaseDataWithTemplateNameInput!]!
@@ -304,9 +306,9 @@ output CreateTimelineEventsPayload (used in: CreateTimelineEvents)
 output Database (used in: GetAllDatabases)
   id: Int
   name: String
-output DefenseLayerMutationPayload (used in: CreateDefenseLayer)
+output DefenseLayerMutationPayload (used in: CloneDefenseLayer, CreateLibraryDefenseLayer)
   defenseLayers: [DefensiveLayer]
-output DefenseLayerMutations (used in: CreateDefenseLayer)
+output DefenseLayerMutations (used in: CloneDefenseLayer, CreateLibraryDefenseLayer)
   clone: DefenseLayerMutationPayload
   create: DefenseLayerMutationPayload
   createLibrary: DefenseLayerMutationPayload
@@ -341,7 +343,7 @@ output DefenseToolProductMutations (used in: CreateDefenseToolProduct)
 output DefenseToolProductsConnection (used in: GetAllDefenseToolProducts)
   nodes: [DefenseToolProduct]
   pageInfo: PageInfo
-output DefensiveLayer (used in: CreateDefenseLayer, CreateDefenseTool, GetAllAssessments, GetAllDefenseTools, GetAllDefensiveLayers, GetBatchAssessmentsForDb, GetLibraryTestCases, UpdateDefenseTool)
+output DefensiveLayer (used in: CloneDefenseLayer, CreateDefenseTool, CreateLibraryDefenseLayer, GetAllAssessments, GetAllDefenseTools, GetAllDefensiveLayers, GetAllLibraryDefensiveLayers, GetBatchAssessmentsForDb, GetLibraryTestCases, UpdateDefenseTool)
   createTime: Float
   deprecated: Boolean
   description: String
@@ -351,7 +353,7 @@ output DefensiveLayer (used in: CreateDefenseLayer, CreateDefenseTool, GetAllAss
   offset: Int
   template: DefensiveLayer
   updateTime: Float
-output DefensiveLayerConnection (used in: GetAllDefensiveLayers)
+output DefensiveLayerConnection (used in: GetAllDefensiveLayers, GetAllLibraryDefensiveLayers)
   nodes: [DefensiveLayer]
   pageInfo: PageInfo
 output DeleteAssessmentPayload (used in: DeleteAssessment)
