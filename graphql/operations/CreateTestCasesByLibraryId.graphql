@@ -1,5 +1,9 @@
+# @genqlient(for: "CreateTestCaseMatchByLibraryIdInput.suppressAutoTimelineEvents", omitempty: true)
+# @genqlient(for: "CreateTestCaseDataInput.userContext", omitempty: true)
 # @genqlient(for: "CreateTestCaseDataInput.attackAutomation", omitempty: true, pointer:true)
 # @genqlient(for: "CreateTestCaseDataInput.redTools", omitempty: true)
+# @genqlient(for: "CreateTestCaseDataInput.attackSuccess", omitempty: true, pointer:true)
+# @genqlient(for: "CreateTestCaseDataInput.clientId", omitempty: true)
 # @genqlient(for: "RedToolInput.vendor", omitempty: true, pointer:true)
 # @genqlient(for: "DefenseToolInput.vendor", omitempty: true, pointer:true)
 mutation CreateTestCasesByLibraryId(
@@ -7,10 +11,13 @@ mutation CreateTestCasesByLibraryId(
     ) {
   testCase {
     createWithTemplateMatchByLibraryId(input: $input) {
-      testCases {
-        id
-        name
-        libraryTestCaseId
+      testCaseCreateItems {
+        clientId
+        testCase {
+          id
+          name
+          libraryTestCaseId
+        }
       }
     }
   }

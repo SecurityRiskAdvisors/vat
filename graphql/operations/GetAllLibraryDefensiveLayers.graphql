@@ -1,0 +1,8 @@
+query GetAllLibraryDefensiveLayers {
+  libraryDefensivelayers {
+    nodes {
+      id
+      name
+    }
+  }
+}

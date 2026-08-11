@@ -1,9 +1,13 @@
-mutation CreateAssessment($input: CreateAssessmentInput!) {
+# @genqlient(for: "CreateAssessmentDataInput.globalId", omitempty: true)
+mutation CreateAssessment(
+  $input: CreateAssessmentInput!
+  ) {
   assessment {
     create(input: $input) {
       assessments {
         id
         name
+        globalId
       }
     }
   }

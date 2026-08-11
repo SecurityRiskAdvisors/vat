@@ -10,10 +10,6 @@ import (
 // ExtractMetadata takes an AssessmentData object and returns a formatted byte array
 // containing the metadata in a tabular format with context.
 func ExtractMetadata(data *AssessmentData) []byte {
-
-	if data.Metadata == nil {
-		return []byte("No metadata available")
-	}
 	var buffer strings.Builder
 
 	buffer.WriteString("VECTR Assessment Tool (VAT) Metadata\n")
@@ -39,22 +35,10 @@ func ExtractMetadata(data *AssessmentData) []byte {
 	writeAssessmentMetadataSection(&buffer, data.Assessment)
 	buffer.WriteString("\n")
 
-	// Save Data section
+	// Save Data section (this is the file's own manifest, not a separate copy of it)
 	buffer.WriteString("Saved VAT Metadata:\n")
 	buffer.WriteString("-------------------\n")
-	if data.Metadata.SaveData != nil {
-		writeMetadataSection(&buffer, data.Metadata.SaveData.serialize())
-	} else {
-		buffer.WriteString("No save operation data available\n")
-	}
-	buffer.WriteString("\n")
-
-	// Load Operation Data section
-	if data.Metadata.LoadData != nil {
-		buffer.WriteString("(Old?) VAT data from a previous transfer:\n")
-		buffer.WriteString("-------------------\n")
-		writeMetadataSection(&buffer, data.Metadata.LoadData.serialize())
-	}
+	writeMetadataSection(&buffer, data.Manifest.asMap())
 
 	return []byte(buffer.String())
 }

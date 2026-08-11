@@ -189,7 +189,7 @@ schema-diff:
 .PHONY: schema-snapshot
 schema-snapshot:
 	@echo "Generating schema type snapshot..."
-	@go run ./_buildcode/schemavalidate/main.go --snapshot | tee schematypes.txt
+	@go run -modfile=./_buildcode/schemavalidate/go.mod ./_buildcode/schemavalidate/main.go --snapshot > schematypes.txt
 	@echo "Completed. Check git diff schematypes.txt to review changes."
 
 .PHONY: create-draft-release

@@ -1,0 +1,28 @@
+# @genqlient(for: "TimelineEventInput.designation", omitempty: true)
+# @genqlient(for: "TimelineEventInput.description", omitempty: true)
+# @genqlient(for: "TimelineEventInput.manualEvent", omitempty: true, pointer: true)
+# @genqlient(for: "TimelineEventInput.outcomeChange", omitempty: true, pointer: true)
+# @genqlient(for: "TimelineEventInput.toolOutcomeChange", omitempty: true, pointer: true)
+# @genqlient(for: "TimelineEventInput.statusChange", omitempty: true, pointer: true)
+mutation CreateTimelineEvents(
+    $input: CreateTimelineEventsInput!
+    ) {
+  timelineEvent {
+    create(input: $input) {
+      items {
+        clientId
+        errors {
+          code
+          field
+          message
+        }
+        replacedTimelineEventId
+      }
+      summary {
+        total
+        succeeded
+        failed
+      }
+    }
+  }
+}

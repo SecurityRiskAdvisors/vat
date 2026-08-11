@@ -1,0 +1,12 @@
+mutation CreateLibraryDefenseLayer(
+  $input: CreateLibraryDefenseLayerInput!
+  ) {
+  defenseLayer {
+    createLibrary(input: $input) {
+      defenseLayers {
+        id
+        name
+      }
+    }
+  }
+}

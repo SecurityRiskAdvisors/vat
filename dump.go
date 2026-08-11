@@ -78,23 +78,16 @@ func DumpInstance(ctx context.Context, client graphql.Client, filter *util.Filte
 						AssessmentName: assessment.Name,
 					}
 					data := &AssessmentData{
-						ToolsMap:   map[string]GenericBlueTool{},
-						IdToolsMap: map[string]GenericBlueTool{},
-						OptionalFields: struct {
-							OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
-							BundleID     string
-							BundlePrefix string
-						}{
-							OrgMap: make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
-						},
-						Metadata: &VatMetadata{
-							SaveData: NewVatOpMetadata(ctx),
-						},
+						AssessmentResource: AssessmentResource{},
+						ToolsMap:           map[string]DefenseToolRef{},
+						IdToolsMap:         map[string]DefenseToolRef{},
+						OrgMap:             make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
+						Manifest:           NewManifestMetadata(ctx),
 					}
 					ad, err := saveAssessment(ctx, client, assessment, data, db.Name)
 					if err != nil {
 						if gqlObject, ok := gqlErrParse(err); ok {
-							slog.ErrorContext(ctx, "Could not dump assessment", "error", gqlObject, "db", db.Name, "assessment", assessment.Name)
+							slog.WarnContext(ctx, "Could not dump assessment", "error", gqlObject, "db", db.Name, "assessment", assessment.Name)
 						}
 						ae.Err = fmt.Errorf("could not dump assessment, db: %s, assessment-name: %s, %w", db.Name, assessment.Name, err)
 						overallError = ErrDumpAssessmentFailure
@@ -108,5 +101,12 @@ func DumpInstance(ctx context.Context, client graphql.Client, filter *util.Filte
 			}
 		}
 	}
+	failed := 0
+	for _, ae := range dumpedAssessments {
+		if ae.Err != nil {
+			failed++
+		}
+	}
+	slog.InfoContext(ctx, "Finished dumping instance", "assessment-count", len(dumpedAssessments), "failed-count", failed)
 	return dumpedAssessments, overallError
 }

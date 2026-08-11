@@ -1,0 +1,22 @@
+mutation CreateDefenseTool(
+  $input: CreateDefenseToolInput!
+  ) {
+  defenseTool {
+    create(input: $input) {
+      defenseTools {
+        id
+        name
+        active
+        description
+        defenseToolProduct {
+          id
+          ref
+        }
+        defensiveLayers {
+          id
+          name
+        }
+      }
+    }
+  }
+}

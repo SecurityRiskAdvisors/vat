@@ -23,6 +23,7 @@ var (
 	sourceCampaignName         string
 	forceEnvOnly               bool
 	ignoreVersionCheck         bool
+	resetGlobalId              bool
 )
 
 // RootCmd is the root command for the CLI

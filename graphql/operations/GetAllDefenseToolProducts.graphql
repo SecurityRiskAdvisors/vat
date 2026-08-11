@@ -1,0 +1,9 @@
+query GetAllDefenseToolProducts {
+  defenseToolProducts {
+    nodes {
+      id
+      name
+      ref
+    }
+  }
+}

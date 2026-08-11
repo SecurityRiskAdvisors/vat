@@ -15,10 +15,17 @@ query GetAllDefenseTools($db: String!) {
         ref
         description
         icon
+        defensiveLayers {
+          id
+          name
+          description
+        }
         vendor {
           name
         }
       }
+      createTime
+      updateTime
     }
   }
 }

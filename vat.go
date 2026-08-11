@@ -3,7 +3,8 @@ package vat
 import (
 	_ "embed"
 	"encoding/json"
-	"sra/vat/internal/dao"
+	"fmt"
+	"strings"
 
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -14,82 +15,93 @@ type VatContextValue string
 //go:embed LICENSE
 var License string
 
-// GenericBlueTool represents a tool within the VECTR application, providing a standardized way to manage tool-related data.
-//
-// Fields:
-//   - Id: A unique identifier for the tool.
-//   - Name: The name of the tool.
-//   - ProductName: The product name associated with the tool.
-type GenericBlueTool struct {
-	Id          string
+// DefenseToolRef is a defense tool's durable, cross-instance identity as
+// recorded in a saved assessment: enough to find-or-create the same tool
+// (and its product/layers) in a different VECTR instance during restore,
+// and enough to re-associate a test case's tool references (e.g.
+// DefenseToolOutcomes) with whichever tool ends up representing it there.
+type DefenseToolRef struct {
 	Name        string
-	ProductName string
+	Description string
+	Active      bool
+	Layers      []string // defense layer names attached directly to the tool
+	Product     DefenseToolProductRef
 }
 
-// AssessmentData represents the data structure for an assessment within the VECTR application.
+// DefenseToolProductRef is a defense tool product's durable, cross-instance
+// identity. Ref is the matching key restore uses to find/reuse a product on
+// the target instance -- ids are per-instance and never compared directly.
+type DefenseToolProductRef struct {
+	Ref        string
+	Name       string
+	VendorName string
+	Layers     []DefenseLayer
+}
+
+// DefenseLayerRef is the defense layer of the associated product
+// Since they are getting created in the instance, we'll create with
+// all of the appropriate metadata.
+type DefenseLayer struct {
+	Name        string
+	Description string
+}
+
+// Key is this tool's composite identity within the instance it was saved
+// from: name + product + active state. Two tools sharing a name but
+// differing in product or active state are considered different tools (see
+// restore.go's reconcileDefenseTools).
 //
-// Fields:
-//   - Assessment: Contains detailed information about the assessment.
-//   - LibraryTestCases: Maps test case IDs to their corresponding library test case details.
-//   - TemplateAssessment: Stores the name of the template assessment used.
-//   - Organizations: Lists the organizations associated with the assessment.
-//   - ToolsMap: Maps tool names to their corresponding `GenericBlueTool` details.
-//   - IdToolsMap: Maps tool IDs to their corresponding `GenericBlueTool` details.
-//   - Metadata: Holds metadata related to the assessment operations.
-//   - OptionalFields: Contains additional fields that are not required for restoration, allowing for backward-compatible updates.
+// The product component is the *source* instance's product ref, so a Key is
+// always a source-side identity -- it's what ToolsMap and IdToolsMap are
+// keyed by, and what reconcileDefenseTools keys its results by. It is never
+// compared against a key built from target-instance data: refs are generated
+// per-instance, so reconcileDefenseTools resolves each ref's product on the
+// target first and builds its own key from that product's target id instead
+// (see its doc comment).
+func (d DefenseToolRef) Key() string {
+	return defenseToolKey(d.Name, d.Product.Ref, d.Active)
+}
+
+// defenseToolKey is the shared format for a tool's name + product +
+// active-state identity. productKey is whichever product identifier is
+// meaningful in the space the key belongs to: the source product ref for a
+// saved DefenseToolRef (see Key above), or the target product id for a
+// BlueTool on the instance being restored into (see reconcileDefenseTools in
+// restore.go). Keys from those two spaces are never compared with each other
+// -- the format is shared so that each space formats its own keys
+// consistently, not so the two can be matched up.
+func defenseToolKey(name, productKey string, active bool) string {
+	return fmt.Sprintf("%s\x00%s\x00%t", name, productKey, active)
+}
+
+// AssessmentData is the in-memory model for a single assessment restore/save
+// operation. It composes the individually-versioned resources (see
+// format.go) with the file's own manifest.
+//
+// AssessmentResource is embedded so existing code can keep referencing
+// ad.Assessment, ad.ToolsMap, ad.IdToolsMap, ad.TemplateAssessment,
+// ad.OrgMap, ad.BundleID, ad.BundlePrefix directly via Go's field promotion.
+//
+// There is deliberately no restore-time field here (e.g. "RestoreInfo"):
+// that information (which vat/VECTR version is doing the current restore) is
+// an artifact of a single RestoreAssessment call, not a property of the data
+// being restored — nothing ever re-serializes AssessmentData after a
+// restore, so it lives as a local variable in restore.go instead of a
+// stored field (see VatOpMetadata's doc comment in metadata.go).
 type AssessmentData struct {
-	Assessment         dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessment
-	LibraryTestCases   map[string]dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase
-	TemplateAssessment string
-	Organizations      []string
-	ToolsMap           map[string]GenericBlueTool
-	IdToolsMap         map[string]GenericBlueTool
-	Metadata           *VatMetadata
-	OptionalFields     struct { // these fields will never be required on the restore side, so can be added to without changing the major version of the application
-		OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
-		BundleID     string
-		BundlePrefix string
-	}
-}
-
-// EncodeToJson is a convienience function converts an `AssessmentData` struct into a JSON-encoded byte slice.
-//
-// Parameters:
-//   - data: A pointer to an `AssessmentData` struct containing the data to be serialized.
-//
-// Returns:
-//   - A byte slice containing the JSON-encoded representation of the `AssessmentData`.
-//   - An error if the JSON encoding process fails.
-//
-// Errors:
-//   - Returns an error if the `json.MarshalIndent` function fails to serialize the data.
-func EncodeToJson(data *AssessmentData) ([]byte, error) {
-	jsonData, err := json.MarshalIndent(data, "", "\t")
-	if err != nil {
-		return nil, err
-	}
-	return jsonData, nil
-}
-
-// DecodeJson is a function that deserializes a JSON-encoded byte slice into an `AssessmentData` struct.
-//
-// Parameters:
-//   - data: A byte slice containing the JSON-encoded representation of the `AssessmentData`.
-//
-// Returns:
-//   - A pointer to an `AssessmentData` struct populated with the deserialized data.
-//   - An error if the JSON decoding process fails.
-//
-// Errors:
-//   - Returns an error if the `json.Unmarshal` function fails to deserialize the data.
-func DecodeJson(data []byte) (*AssessmentData, error) {
-	a := AssessmentData{}
-
-	err := json.Unmarshal(data, &a)
-	if err != nil {
-		return nil, err
-	}
-	return &a, nil
+	AssessmentResource
+	LibraryTestCases LibraryTestCasesResource
+	// OrgMap is the sole source of the organization names referenced by this
+	// assessment (name -> full Organization object) — there is no separate
+	// flat name list. Callers that just need names use
+	// slices.Collect(maps.Keys(OrgMap)).
+	OrgMap     OrgMapResource
+	ToolsMap   ToolsMapResource
+	IdToolsMap IdToolsMapResource
+	// Manifest is save-time provenance and part of the wire file itself —
+	// see Manifest's doc comment. Stamped via NewManifestMetadata at save
+	// time; handed back as-is by DecodeJson.
+	Manifest Manifest
 }
 
 // gqlErrParse attempts to parse a GraphQL error into a JSON-compatible object.
@@ -122,4 +134,35 @@ func gqlErrParse(err error) (any, bool) {
 		return nil, false
 	}
 	return a, true
+}
+
+// isDuplicateGlobalIdError reports whether err is the GraphQL validation
+// error VECTR returns when an assessment's globalId already exists in the
+// target instance (this happens when restoring/transferring the same source
+// assessment into an instance that already holds a copy with that globalId,
+// e.g. under a different name). Callers can use this to point the user at
+// RestoreOptionalParams.ResetGlobalId / --reset-id instead of surfacing a raw
+// GraphQL validation error.
+func isDuplicateGlobalIdError(err error) bool {
+	gqlErrs, ok := err.(gqlerror.List)
+	if !ok {
+		return false
+	}
+	for _, e := range gqlErrs {
+		for key, val := range e.Extensions {
+			if !strings.Contains(strings.ToLower(key), "globalid") {
+				continue
+			}
+			msgs, ok := val.([]any)
+			if !ok {
+				continue
+			}
+			for _, m := range msgs {
+				if s, ok := m.(string); ok && strings.Contains(s, "Duplicate globalId") {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

@@ -7,6 +7,7 @@ query GetLibraryTestCases($ids: [String]!) {
       method
       libraryTestCaseId
       mitreId
+      attackSuccess
       organizations {
         name
       }
@@ -43,6 +44,70 @@ query GetLibraryTestCases($ids: [String]!) {
       detectionGuidance
       preventionGuidance
       references
+      userContext
+      importTime
+      attachmentFiles {
+        id
+        filename
+        fileSize
+        mimeType
+        thumbnailData
+        metadata
+        createdAt
+        updatedAt
+      }
+      completeTime {
+        id
+        team
+        fieldName
+        type
+        manualDescription
+        createdByUser {
+          id
+          username
+        }
+        lastUpdatedByUser {
+          id
+          username
+        }
+        createTime
+        updateTime
+        toolOutcomeChange {
+          defenseToolId
+          outcomeId
+        }
+        designation
+      }
+      unstructuredLogs {
+        id
+        content
+        filename
+        createTime
+        updateTime
+      }
+      timelineEvents {
+        id
+        team
+        fieldName
+        fieldAction
+        type
+        manualDescription
+        createdByUser {
+          id
+          username
+        }
+        lastUpdatedByUser {
+          id
+          username
+        }
+        createTime
+        updateTime
+        toolOutcomeChange {
+          defenseToolId
+          outcomeId
+        }
+        designation
+      }
     }
   }
 }

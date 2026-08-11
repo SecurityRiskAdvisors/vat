@@ -7,6 +7,7 @@ query GetBatchAssessmentsForDb($db: String!) {
       id
       name
       description
+      globalId
       organizations {
         id
         name
@@ -40,6 +41,17 @@ query GetBatchAssessmentsForDb($db: String!) {
           libraryTestCaseId
           mitreId
           deprecated
+          attackSuccess
+          attachmentFiles {
+            id
+            filename
+            fileSize
+            mimeType
+            thumbnailData
+            metadata
+            createdAt
+            updatedAt
+          }
           organizations {
             name
           }
@@ -185,6 +197,7 @@ query GetBatchAssessmentsForDb($db: String!) {
           }
           detectionGuidance
           preventionGuidance
+          # @genqlient(pointer: true)
           detectionTime {
             id
             team
@@ -192,9 +205,23 @@ query GetBatchAssessmentsForDb($db: String!) {
             fieldAction
             type
             manualDescription
+            designation
+            createdByUser {
+              id
+              username
+            }
+            lastUpdatedByUser {
+              id
+              username
+            }
+            toolOutcomeChange {
+              defenseToolId
+              outcomeId
+            }
             createTime
             updateTime
           }
+          # @genqlient(pointer: true)
           attackStop {
             id
             team
@@ -202,9 +229,23 @@ query GetBatchAssessmentsForDb($db: String!) {
             fieldAction
             type
             manualDescription
+            designation
+            createdByUser {
+              id
+              username
+            }
+            lastUpdatedByUser {
+              id
+              username
+            }
+            toolOutcomeChange {
+              defenseToolId
+              outcomeId
+            }
             createTime
             updateTime
           }
+          # @genqlient(pointer: true)
           attackStart {
             id
             team
@@ -212,8 +253,78 @@ query GetBatchAssessmentsForDb($db: String!) {
             fieldAction
             type
             manualDescription
+            designation
+            createdByUser {
+              id
+              username
+            }
+            lastUpdatedByUser {
+              id
+              username
+            }
+            toolOutcomeChange {
+              defenseToolId
+              outcomeId
+            }
             createTime
             updateTime
+          }
+          # @genqlient(pointer: true)
+          completeTime {
+            id
+            team
+            fieldName
+            type
+            manualDescription
+            createdByUser {
+              id
+              username
+            }
+            lastUpdatedByUser {
+              id
+              username
+            }
+            createTime
+            updateTime
+            toolOutcomeChange {
+              defenseToolId
+              outcomeId
+            }
+            designation
+          }
+          importTime
+          userContext
+          unstructuredLogs {
+            id
+            content
+            filename
+            createTime
+            updateTime
+          }
+          # @genqlient(pointer: true)
+          timelineEvents {
+            id
+            team
+            fieldName
+            fieldAction
+            type
+            manualDescription
+            createdByUser {
+              id
+              username
+            }
+            lastUpdatedByUser {
+              id
+              username
+            }
+            createTime
+            updateTime
+            # @genqlient(pointer: true)
+            toolOutcomeChange {
+              defenseToolId
+              outcomeId
+            }
+            designation
           }
           references
           dataVer
@@ -272,6 +383,7 @@ query GetBatchAssessmentsForDb($db: String!) {
       tags {
         id
         name
+        active
         sys
         tagTypeId
         tagColor

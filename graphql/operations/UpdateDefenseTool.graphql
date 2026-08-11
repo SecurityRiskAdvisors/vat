@@ -1,0 +1,22 @@
+mutation UpdateDefenseTool(
+  $input: UpdateDefenseToolInput!
+  ) {
+  defenseTool {
+    update(input: $input) {
+      defenseTools {
+        id
+        name
+        active
+        description
+        defenseToolProduct {
+          id
+          ref
+        }
+        defensiveLayers {
+          id
+          name
+        }
+      }
+    }
+  }
+}

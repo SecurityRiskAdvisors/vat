@@ -42,22 +42,11 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		"db", db,
 		"assessment_name", assessment_name)
 	data := &AssessmentData{
-		ToolsMap:   map[string]GenericBlueTool{},
-		IdToolsMap: map[string]GenericBlueTool{},
-		OptionalFields: struct {
-			OrgMap       map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization
-			BundleID     string
-			BundlePrefix string
-		}{
-			OrgMap: make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
-		},
-		Metadata: &VatMetadata{
-			SaveData: NewVatOpMetadata(ctx),
-		},
-	}
-
-	if data.Metadata.SaveData.VectrVersion != TAGGED_VECTR_VERSION {
-		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "saved-data-version", data.Metadata.SaveData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION, "vat-version", data.Metadata.SaveData.Version)
+		AssessmentResource: AssessmentResource{},
+		ToolsMap:           map[string]DefenseToolRef{},
+		IdToolsMap:         map[string]DefenseToolRef{},
+		OrgMap:             make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization),
+		Manifest:           NewManifestMetadata(ctx),
 	}
 
 	assessment, err := dao.GetAllAssessments(ctx, client, db, assessment_name)
@@ -78,7 +67,12 @@ func SaveAssessmentData(ctx context.Context, client graphql.Client, db string, a
 		return nil, fmt.Errorf("error searching %s, %w", assessment_name, err)
 	}
 
-	return saveAssessment(ctx, client, assessment.Assessments.Nodes[0], data, db)
+	result, err := saveAssessment(ctx, client, assessment.Assessments.Nodes[0], data, db)
+	if err != nil {
+		return nil, err
+	}
+	slog.InfoContext(ctx, "Finished saving assessment", "assessment-name", assessment_name, "db", db)
+	return result, nil
 }
 
 // saveAssessment processes the assessment data and fetches associated library test cases and defense tools.
@@ -111,7 +105,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 	data.Assessment = assessment
 
 	for _, org := range data.Assessment.Organizations {
-		data.OptionalFields.OrgMap[org.Name] = org
+		data.OrgMap[org.Name] = org
 	}
 
 	// check if there is a library assessment (bundle) to use
@@ -125,7 +119,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 			completionProgress["bundle"] = true
 		}
 		if metadata.Key == "prefix" {
-			data.OptionalFields.BundlePrefix = metadata.Value
+			data.BundlePrefix = metadata.Value
 			completionProgress["prefix"] = true
 		}
 		// this isn't the cleanest version, but if I have more keys I can do it that way
@@ -136,8 +130,8 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 	// if we could find a template assessment, then let's get the ID for it as well
 	if data.TemplateAssessment != "" {
 		var bundle_name string = data.TemplateAssessment
-		if data.OptionalFields.BundlePrefix != "" {
-			bundle_name = fmt.Sprintf("%s - %s", data.OptionalFields.BundlePrefix, data.TemplateAssessment)
+		if data.BundlePrefix != "" {
+			bundle_name = fmt.Sprintf("%s - %s", data.BundlePrefix, data.TemplateAssessment)
 		}
 		bundleIdResponse, err := dao.GetBundleByName(ctx, client, bundle_name)
 		if err != nil {
@@ -147,7 +141,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 			return nil, fmt.Errorf("could not connect to get the bundle id for %s. Env: %s: %w", data.TemplateAssessment, db, err)
 		}
 		if len(bundleIdResponse.LibraryAssessments.Nodes) > 0 {
-			data.OptionalFields.BundleID = bundleIdResponse.LibraryAssessments.Nodes[0].Id //there can only be one field due to the graphql query
+			data.BundleID = bundleIdResponse.LibraryAssessments.Nodes[0].Id //there can only be one field due to the graphql query
 		}
 	}
 
@@ -155,7 +149,7 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 
 	for _, c := range data.Assessment.Campaigns {
 		for _, o := range c.Organizations {
-			data.OptionalFields.OrgMap[o.Name] = dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization(o)
+			data.OrgMap[o.Name] = dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization(o)
 		}
 		for _, tc := range c.TestCases {
 			if tc.LibraryTestCaseId != "" && tc.LibraryTestCaseId != "null" {
@@ -180,6 +174,13 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 		for _, retrived_library_cases := range r.LibraryTestcasesByIds.Nodes {
 			data.LibraryTestCases[retrived_library_cases.LibraryTestCaseId] = retrived_library_cases
 		}
+		// Note: any id placeholdered above (line ~156) that GetLibraryTestCases
+		// doesn't return a node for stays as that zero-value placeholder in
+		// data.LibraryTestCases -- an empty/ghost entry would silently persist
+		// into the save file. Not currently reachable (these ids come from the
+		// same live assessment being saved), but if that ever changes, this is
+		// the place to reconcile ids against len(r.LibraryTestcasesByIds.Nodes)
+		// and warn/error on any that didn't come back.
 	}
 
 	slog.DebugContext(ctx, "Fetching defense tools",
@@ -192,44 +193,76 @@ func saveAssessment(ctx context.Context, client graphql.Client, assessment dao.G
 		return nil, fmt.Errorf("could not connect to fetch blue tools for %s: %w", db, err)
 	}
 
+	// Index once by id so both loops below always build a DefenseToolRef from
+	// the full GetAllDefenseTools node -- tc.BlueTools' own selection lacks
+	// description/active/product ref, so resolving through this index (rather
+	// than tc.BlueTools' fields directly) keeps every ref fully populated
+	// regardless of which loop finds it first.
+	bluetoolsById := make(map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(btr.Bluetools.Nodes))
+	for _, bt := range btr.Bluetools.Nodes {
+		bluetoolsById[bt.Id] = bt
+	}
+
 	for _, c := range data.Assessment.Campaigns {
 		for _, tc := range c.TestCases {
 			for _, bt := range tc.BlueTools {
-				if _, ok := data.ToolsMap[bt.Name]; !ok {
-					gbt := GenericBlueTool{
-						Id:          bt.Id,
-						Name:        bt.Name,
-						ProductName: bt.DefenseToolProduct.Name,
-					}
-					data.ToolsMap[bt.Name] = gbt
-					data.IdToolsMap[bt.Id] = gbt
+				if _, ok := data.IdToolsMap[bt.Id]; ok {
+					continue
 				}
+				full, ok := bluetoolsById[bt.Id]
+				if !ok {
+					slog.WarnContext(ctx, "test case references a blue tool not present in GetAllDefenseTools, skipping", "tool-id", bt.Id, "tool-name", bt.Name)
+					continue
+				}
+				ref := toDefenseToolRef(full)
+				data.ToolsMap[ref.Key()] = ref
+				data.IdToolsMap[bt.Id] = ref
 			}
 			for _, outcomes := range tc.DefenseToolOutcomes {
-				for _, bt := range btr.Bluetools.Nodes {
-					if strconv.Itoa(outcomes.DefenseToolId) == bt.Id {
-						if _, ok := data.ToolsMap[bt.Name]; !ok {
-							gbt := GenericBlueTool{
-								Id:          bt.Id,
-								Name:        bt.Name,
-								ProductName: bt.DefenseToolProduct.Name,
-							}
-							data.ToolsMap[bt.Name] = gbt
-							data.IdToolsMap[bt.Id] = gbt
-							break
-						}
-
-					}
+				toolId := strconv.Itoa(outcomes.DefenseToolId)
+				if _, ok := data.IdToolsMap[toolId]; ok {
+					continue
 				}
+				full, ok := bluetoolsById[toolId]
+				if !ok {
+					slog.WarnContext(ctx, "defense tool outcome references a tool not present in GetAllDefenseTools, skipping", "tool-id", toolId)
+					continue
+				}
+				ref := toDefenseToolRef(full)
+				data.ToolsMap[ref.Key()] = ref
+				data.IdToolsMap[toolId] = ref
 			}
-
 		}
 	}
 
-	// get a unique list of the orgs
-	data.Organizations = slices.Collect(maps.Keys(data.OptionalFields.OrgMap))
-	slog.InfoContext(ctx, "Finished dumping assessment", "date", data.Metadata.SaveData.Date, "vat-version", data.Metadata.SaveData.Version, "assessment-name", data.Assessment.Name, "db", db)
+	slog.DebugContext(ctx, "Finished dumping assessment", "date", data.Manifest.Created, "vat-version", data.Manifest.VatVersion, "assessment-name", data.Assessment.Name, "db", db)
 
 	return data, nil
 
+}
+
+// toDefenseToolRef projects a full GetAllDefenseTools BlueTool node down to
+// the durable, cross-instance identity restore needs (see DefenseToolRef's
+// doc comment).
+func toDefenseToolRef(bt dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool) DefenseToolRef {
+	layers := make([]string, 0, len(bt.DefensiveLayers))
+	for _, l := range bt.DefensiveLayers {
+		layers = append(layers, l.Name)
+	}
+	productLayers := make([]DefenseLayer, 0, len(bt.DefenseToolProduct.DefensiveLayers))
+	for _, l := range bt.DefenseToolProduct.DefensiveLayers {
+		productLayers = append(productLayers, DefenseLayer{Name: l.Name, Description: l.Description})
+	}
+	return DefenseToolRef{
+		Name:        bt.Name,
+		Description: bt.Description,
+		Active:      bt.Active,
+		Layers:      layers,
+		Product: DefenseToolProductRef{
+			Ref:        bt.DefenseToolProduct.Ref,
+			Name:       bt.DefenseToolProduct.Name,
+			VendorName: bt.DefenseToolProduct.Vendor.Name,
+			Layers:     productLayers,
+		},
+	}
 }

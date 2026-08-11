@@ -1,0 +1,8 @@
+query FindVendor($vendorName: String!) {
+  libraryVendors(filter: { name: { eq: $vendorName } }, first: 1) {
+    nodes {
+      id
+      name
+    }
+  }
+}

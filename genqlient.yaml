@@ -5,3 +5,6 @@ operations:
 - graphql/operations/*.graphql
 generated: internal/dao/generated.go
 package: dao
+bindings:
+  DateTime:
+    type: time.Time

@@ -2,12 +2,14 @@ package vat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"sra/vat/internal/dao"
 
@@ -21,14 +23,32 @@ type RestoreOptionalParams struct {
 	OverrideAssessmentTemplate bool   // Flag to override using the use of the existing template assessment. Directly import the tests instead (lower fidelty)
 	DeleteOnFailure            bool   // Flag to delete assessments if the campaign import failed
 	ForceEnvOnly               bool   // FLag to ignore template test cases even if one exists in the source
+	// ResetGlobalId mints a new globalId for the assessment being restored
+	// instead of reusing the one from the serialized data. VECTR rejects an
+	// assessment create when its globalId already exists in the target
+	// instance, which happens when the same source assessment is restored
+	// into an instance that already holds a copy of it (e.g. under a
+	// different name) -- set this to land it as an independent copy.
+	ResetGlobalId bool
 }
 
 var ErrOrgNotFound = fmt.Errorf("could not find org(s)")
-var ErrMissingTools = fmt.Errorf("could not find tools")
 var ErrMissingLibraryAssessment = fmt.Errorf("missing library assessment")
 var ErrInvalidAssessmentName = fmt.Errorf("assessment name override is invalid (blank?)")
 var ErrAssessmentAlreadyExists = fmt.Errorf("assessment already exists")
 var ErrCampaignNotFound = fmt.Errorf("campaign not found")
+var ErrDuplicateGlobalId = fmt.Errorf("assessment globalId already exists in target instance, retry with --reset-id")
+
+// ErrIncompleteDefenseToolData is returned when a DefenseToolRef is missing
+// a piece of information reconcileDefenseTools needs to safely match or
+// create it -- a blank tool name, product ref, product name, or layer name.
+// This can come from a source VECTR instance that genuinely has incomplete
+// data, or from a serialized file that predates this field being captured
+// (an older vat version, or a legacy save). Either way, guessing at a value
+// (e.g. inventing a name) would silently create hard-to-clean-up,
+// empty-named tools/products/layers in the target instance, so restore
+// stops instead.
+var ErrIncompleteDefenseToolData = fmt.Errorf("defense tool data is incomplete")
 
 // executorMap maps automation executor types (e.g., "powershell") to their corresponding internal representation.
 // The read part of the API does not return an ENUM or fixed type, just a generic string. This maps it back
@@ -54,6 +74,7 @@ var outcomeStatusMap map[string]dao.TestCaseStatus = map[string]dao.TestCaseStat
 	string(dao.TestCaseStatusInprogress):   dao.TestCaseStatusInprogress,
 	string(dao.TestCaseStatusPaused):       dao.TestCaseStatusPaused,
 	"Not Performed":                        dao.TestCaseStatusNotperformed,
+	"In Progress":                          dao.TestCaseStatusInprogress,
 }
 
 type AutomationArgumentTypes interface {
@@ -79,103 +100,89 @@ type Automator[A AutomationArgumentTypes] interface {
 	GetAutomationArgument() []A
 }
 
-func NewGroupedCreateTestCaseWithLibraryIdInput(td dao.CreateTestCaseMatchByLibraryIdInput) *GroupedCreateTestCaseWithLibraryIdInput {
+func NewGroupedCreateTestCaseWithLibraryIdInput(db, campaignId string) *GroupedCreateTestCaseWithLibraryIdInput {
 	return &GroupedCreateTestCaseWithLibraryIdInput{
-		Base: dao.CreateTestCaseMatchByLibraryIdInput{
-			Db:         td.Db,
-			CampaignId: td.CampaignId,
-		},
-		TestCases: make(map[LibraryTestCaseIdIndex][]dao.CreateTestCaseDataWithLibraryIdInput),
+		db:         db,
+		campaignId: campaignId,
+		groups:     make(map[string][]dao.CreateTestCaseDataWithLibraryIdInput),
 	}
 }
 
-type LibraryTestCaseIdIndex string
-
-// This is an object that will handle creating objects for campaigns, instead of the default
-// This allows us to split out the requests so we don't have one requests with multiple library
-// test case ids
+// GroupedCreateTestCaseWithLibraryIdInput splits queued test case inserts
+// into batches, so a single CreateTestCasesByLibraryId request never contains
+// the same libraryTestCaseId twice (VECTR rejects such a request).
 type GroupedCreateTestCaseWithLibraryIdInput struct {
-	Base      dao.CreateTestCaseMatchByLibraryIdInput
-	TestCases map[LibraryTestCaseIdIndex][]dao.CreateTestCaseDataWithLibraryIdInput
+	db, campaignId string
+	groups         map[string][]dao.CreateTestCaseDataWithLibraryIdInput
 }
 
 func (g *GroupedCreateTestCaseWithLibraryIdInput) Add(tcd dao.CreateTestCaseDataWithLibraryIdInput) {
-	if _, ok := g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)]; !ok {
-		g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)] = make([]dao.CreateTestCaseDataWithLibraryIdInput, 0, 5)
-	}
-
-	g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)] = append(g.TestCases[LibraryTestCaseIdIndex(tcd.LibraryTestCaseId)], tcd)
+	g.groups[tcd.LibraryTestCaseId] = append(g.groups[tcd.LibraryTestCaseId], tcd)
 }
 
 func (g *GroupedCreateTestCaseWithLibraryIdInput) Len() int {
 	size := 0
-
-	for _, tcs := range g.TestCases {
+	for _, tcs := range g.groups {
 		size += len(tcs)
 	}
-
 	return size
 }
 
+// GenerateInsertsData spreads each libraryTestCaseId group's entries across
+// batches by position, so batch i never contains two entries sharing a
+// libraryTestCaseId.
 func (g *GroupedCreateTestCaseWithLibraryIdInput) GenerateInsertsData() []dao.CreateTestCaseMatchByLibraryIdInput {
 	maxSize := 0
-
-	for _, testcases := range g.TestCases {
-		if len(testcases) > maxSize {
-			maxSize = len(testcases)
+	for _, entries := range g.groups {
+		if len(entries) > maxSize {
+			maxSize = len(entries)
 		}
 	}
-
 	if maxSize == 0 {
 		return nil
 	}
 
-	results := make([]dao.CreateTestCaseMatchByLibraryIdInput, 0, maxSize)
-
-	for i := 0; i < maxSize; i++ {
-		var obj dao.CreateTestCaseMatchByLibraryIdInput
-		obj.Db = g.Base.Db
-		obj.CampaignId = g.Base.CampaignId
-		obj.CreateTestCaseInputs = []dao.CreateTestCaseDataWithLibraryIdInput{}
-		for _, testcases := range g.TestCases {
-			if len(testcases) > (i) {
-				obj.CreateTestCaseInputs = append(obj.CreateTestCaseInputs, testcases[i])
-			} else {
-				continue
-			}
+	batches := make([]dao.CreateTestCaseMatchByLibraryIdInput, maxSize)
+	for i := range batches {
+		batches[i] = dao.CreateTestCaseMatchByLibraryIdInput{
+			Db:                         g.db,
+			CampaignId:                 g.campaignId,
+			SuppressAutoTimelineEvents: true,
 		}
-		results = append(results, obj)
 	}
-	return results
+	for _, entries := range g.groups {
+		for i, e := range entries {
+			batches[i].CreateTestCaseInputs = append(batches[i].CreateTestCaseInputs, e)
+		}
+	}
+	return batches
 }
 
-// validateRestorePrerequisites checks if organizations and tools required for the assessment restore
-// exist in the target VECTR instance.
-// It returns a map of organization names to their VECTR objects, a map of tool names to their VECTR objects,
-// and an error if any prerequisite is not met.
-func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db string, orgNames []string, toolsToValidate map[string]GenericBlueTool, optionalOrgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization) (map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, error) {
+// validateRestorePrerequisites checks if organizations required for the
+// assessment restore exist in the target VECTR instance. It returns a map
+// of organization names to their VECTR objects, and an error if any
+// organization is missing.
+//
+// Defense tools are handled separately, by reconcileDefenseTools below --
+// unlike organizations, a missing tool is no longer terminal (VECTR can now
+// create one), so that step has side effects and doesn't belong in a
+// function named "validate".
+func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db string, orgMap map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization) (map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization, error) {
 	slog.InfoContext(ctx, "Starting restore prerequisites validation",
 		"db", db,
-		"organization_count", len(orgNames),
-		"tool_count", len(toolsToValidate),
+		"organization_count", len(orgMap),
 	)
 
-	// Step 1: Check if the organizations are in the new instance, error if not
+	// Check if the organizations are in the new instance, error if not
 	missing_orgs := []string{}
 	org_map := make(map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization)
-	for _, o := range orgNames {
+	for o, om := range orgMap {
 		r, err := dao.FindOrganization(ctx, client, o)
 		if err != nil {
 			if gqlObject, ok := gqlErrParse(err); ok {
 				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 			}
-			if optionalOrgMap != nil {
-				om := optionalOrgMap[o]
-				return nil, nil, fmt.Errorf("could not fetch organization: %s, %s, %s, %s: %w", om.Name, om.Abbreviation, om.Description, om.Url, err)
-
-			} else {
-				return nil, nil, fmt.Errorf("could not fetch organization: %s: %w", o, err)
-			}
+			return nil, fmt.Errorf("could not fetch organization: %s, %s, %s, %s: %w", om.Name, om.Abbreviation, om.Description, om.Url, err)
 		}
 		if len(r.Organizations.Nodes) == 0 {
 			missing_orgs = append(missing_orgs, o)
@@ -184,57 +191,460 @@ func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db
 		org_map[r.Organizations.Nodes[0].Name] = r.Organizations.Nodes[0]
 	}
 	slog.DebugContext(ctx, "Validating organizations",
-		"total", len(orgNames),
+		"total", len(orgMap),
 		"missing_orgs", missing_orgs)
 	if len(missing_orgs) > 0 {
-		// if the fields exist, then let's print em
-		if optionalOrgMap != nil {
-			for _, org := range missing_orgs {
-				om := optionalOrgMap[org]
-				slog.ErrorContext(ctx, "missing organization", "name", om.Name, "abbreviation", om.Abbreviation, "desc", om.Description, "url", om.Url)
-			}
+		for _, org := range missing_orgs {
+			om := orgMap[org]
+			slog.ErrorContext(ctx, "missing organization", "name", om.Name, "abbreviation", om.Abbreviation, "desc", om.Description, "url", om.Url)
 		}
-		return nil, nil, fmt.Errorf("these orgs are missing from your instance: %s: %w", strings.Join(missing_orgs, ","), ErrOrgNotFound)
+		return nil, fmt.Errorf("these orgs are missing from your instance: %s: %w", strings.Join(missing_orgs, ","), ErrOrgNotFound)
 	}
 
-	// Step 2: Check if all the tools are there, alert with each tool, product info
-	instance_tools, err := dao.GetAllDefenseTools(ctx, client, db)
+	return org_map, nil
+}
+
+// validateDefenseToolRefs checks every DefenseToolRef in toolsToReconcile
+// for blank data reconcileDefenseTools cannot safely act on: a blank tool
+// name, product ref, product name, or defense layer name. An empty Layers
+// slice is fine (a tool can legitimately have none); a blank name *within*
+// it is not. Vendor name is also allowed to be blank -- a tool's product
+// may genuinely have no vendor. Returns a single joined error covering
+// every offending ref, or nil if all is well.
+func validateDefenseToolRefs(toolsToReconcile map[string]DefenseToolRef) error {
+	var errs []error
+	for key, ref := range toolsToReconcile {
+		var problems []string
+		if strings.TrimSpace(ref.Name) == "" {
+			problems = append(problems, "tool name is blank")
+		}
+		if strings.TrimSpace(ref.Product.Ref) == "" {
+			problems = append(problems, "product ref is blank")
+		}
+		if strings.TrimSpace(ref.Product.Name) == "" {
+			problems = append(problems, "product name is blank")
+		}
+		for i, name := range ref.Layers {
+			if strings.TrimSpace(name) == "" {
+				problems = append(problems, fmt.Sprintf("layer #%d has a blank name", i))
+			}
+		}
+		if len(problems) > 0 {
+			errs = append(errs, fmt.Errorf("defense tool %q (key %q): %s: %w", ref.Name, key, strings.Join(problems, "; "), ErrIncompleteDefenseToolData))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// reconcileDefenseTools ensures every DefenseToolRef in toolsToReconcile has
+// a corresponding BlueTool in the target db: reusing one that already
+// matches on name+product+active, adding any defense layers it's missing
+// (creating layers as needed), or creating a new product/layer(s)/tool as
+// needed. Returns the target tool id for each ref, keyed by
+// DefenseToolRef.Key().
+//
+// The match is done using the resolved target product's id, not the
+// source's product ref: VECTR generates ref as a random string
+// independently on every instance, so a source ref and a target ref for
+// what's logically "the same" product (matched by name) will essentially
+// never be equal -- comparing raw refs across instances would make this
+// match fail almost every time. Resolving the product first (see
+// resolveOrCreateDefenseToolProduct) and matching on its target-instance id
+// compares two ids that actually live in the same space.
+//
+// VECTR allows two tools identical in every one of these dimensions (name,
+// product, active, layers) to coexist; when that happens vat can't tell
+// them apart and deterministically picks the more recently updated one
+// (falling back to more recently created) -- a documented limitation, not a
+// bug.
+func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string, toolsToReconcile map[string]DefenseToolRef) (map[string]string, error) {
+	slog.InfoContext(ctx, "Starting defense tool reconciliation", "db", db, "tool_count", len(toolsToReconcile))
+
+	if err := validateDefenseToolRefs(toolsToReconcile); err != nil {
+		return nil, err
+	}
+
+	existingTools, err := dao.GetAllDefenseTools(ctx, client, db)
 	if err != nil {
 		if gqlObject, ok := gqlErrParse(err); ok {
 			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 		}
-		return nil, nil, fmt.Errorf("could not fetch tools: %w", err)
+		return nil, fmt.Errorf("could not fetch tools: %w", err)
 	}
-
-	tool_map := make(map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(toolsToValidate))
-	missing_tools := []GenericBlueTool{}
-	slog.DebugContext(ctx, "Validating tools",
-		"total", len(toolsToValidate))
-	for name, tool := range toolsToValidate {
-		found := false
-		for _, instance_tool := range instance_tools.Bluetools.Nodes {
-			if name == instance_tool.Name {
-				found = true
-				tool_map[instance_tool.Name] = instance_tool
-				break
+	toolsByKey := make(map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, len(existingTools.Bluetools.Nodes))
+	for _, t := range existingTools.Bluetools.Nodes {
+		key := defenseToolKey(t.Name, t.DefenseToolProduct.Id, t.Active)
+		if prev, ok := toolsByKey[key]; ok {
+			slog.WarnContext(ctx, "target instance has more than one defense tool with the same name+product+active; picking the more recently updated one", "db", db, "tool-name", t.Name)
+			if t.UpdateTime < prev.UpdateTime || (t.UpdateTime == prev.UpdateTime && t.CreateTime <= prev.CreateTime) {
+				continue // prev is newer (or equally new) -- keep it
 			}
 		}
-		if !found {
-			missing_tools = append(missing_tools, tool)
-		}
-	}
-	if len(missing_tools) > 0 {
-		for _, missing_tool := range missing_tools {
-			slog.ErrorContext(ctx, "Missing tool in target database",
-				"db", db,
-				"tool-name", missing_tool.Name,
-				"product (optional)", missing_tool.ProductName,
-			)
-		}
-		return nil, nil, ErrMissingTools
+		toolsByKey[key] = t
 	}
 
-	return org_map, tool_map, nil
+	existingProductsResp, err := dao.GetAllDefenseToolProducts(ctx, client)
+	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return nil, fmt.Errorf("could not fetch defense tool products: %w", err)
+	}
+	productsByRef := make(map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, len(existingProductsResp.DefenseToolProducts.Nodes))
+	// productsByName is the name fallback used when a source ref doesn't
+	// match anything on the target (see resolveOrCreateDefenseToolProduct).
+	// VECTR doesn't enforce unique product names, and this index is
+	// case-insensitive on top of that, so two products can collapse onto one
+	// entry; the last one seen wins, which is an arbitrary choice among
+	// equals. Warn when it happens rather than resolving silently: if the
+	// existing target tool hangs off the product that lost, its tool key
+	// won't match and vat will create a second, near-identical tool next to
+	// it. Same known limitation as the duplicate-tool case below, and it
+	// converges the same way -- a later restore sees both tools under one key
+	// and picks the more recently updated one -- but the duplicate stays in
+	// the target until someone cleans it up. Products matched by ref are
+	// unaffected: that path is checked first and refs are unique per
+	// instance.
+	productsByName := make(map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, len(existingProductsResp.DefenseToolProducts.Nodes))
+	for _, p := range existingProductsResp.DefenseToolProducts.Nodes {
+		productsByRef[p.Ref] = p
+		nameKey := strings.ToLower(p.Name)
+		if prev, ok := productsByName[nameKey]; ok {
+			slog.WarnContext(ctx, "target instance has more than one defense tool product with the same name (case-insensitively); the name fallback can only resolve to one of them, which may create a duplicate defense tool",
+				"product-name", p.Name, "kept-product-id", p.Id, "kept-product-ref", p.Ref, "ignored-product-id", prev.Id, "ignored-product-ref", prev.Ref)
+		}
+		productsByName[nameKey] = p
+	}
+
+	existingLayersResp, err := dao.GetAllDefensiveLayers(ctx, client, db)
+	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return nil, fmt.Errorf("could not fetch defensive layers: %w", err)
+	}
+	layersByName := make(map[string]dao.GetAllDefensiveLayersDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer, len(existingLayersResp.Defensivelayers.Nodes))
+	for _, l := range existingLayersResp.Defensivelayers.Nodes {
+		layersByName[strings.ToLower(l.Name)] = l
+	}
+
+	existingLibraryLayersResp, err := dao.GetAllLibraryDefensiveLayers(ctx, client)
+	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return nil, fmt.Errorf("could not fetch library defensive layers: %w", err)
+	}
+	libraryLayersByName := make(map[string]dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer, len(existingLibraryLayersResp.LibraryDefensivelayers.Nodes))
+	for _, l := range existingLibraryLayersResp.LibraryDefensivelayers.Nodes {
+		libraryLayersByName[strings.ToLower(l.Name)] = l
+	}
+
+	result := make(map[string]string, len(toolsToReconcile))
+	for key, ref := range toolsToReconcile {
+		if len(ref.Layers) == 0 {
+			slog.WarnContext(ctx, "defense tool has no defense layers; assigning placeholder layer so it can still be created -- review and reassign the correct layer(s)", "db", db, "tool-name", ref.Name, "placeholder-layer", PLACEHOLDER_DEFENSE_LAYER_NAME)
+			ref.Layers = []string{PLACEHOLDER_DEFENSE_LAYER_NAME}
+		}
+
+		product, err := resolveOrCreateDefenseToolProduct(ctx, client, ref.Product, productsByRef, productsByName, libraryLayersByName)
+		if err != nil {
+			return nil, err
+		}
+
+		targetKey := defenseToolKey(ref.Name, product.Id, ref.Active)
+		if existing, ok := toolsByKey[targetKey]; ok {
+			slog.DebugContext(ctx, "defense tool matched existing", "tool-name", ref.Name, "product-id", product.Id, "active", ref.Active, "target-tool-id", existing.Id)
+			id, err := reconcileExistingDefenseTool(ctx, client, db, existing, ref, layersByName, libraryLayersByName)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = id
+			continue
+		}
+		slog.DebugContext(ctx, "defense tool has no existing match, resolving layers to create it", "tool-name", ref.Name, "product-id", product.Id, "active", ref.Active)
+
+		layerIds, err := resolveOrCreateDefenseLayerIds(ctx, client, db, ref.Layers, layersByName, libraryLayersByName)
+		if err != nil {
+			return nil, err
+		}
+
+		r, err := dao.CreateDefenseTool(ctx, client, dao.CreateDefenseToolInput{
+			Db: db,
+			CreateDefenseToolData: []dao.CreateDefenseToolDataInput{{
+				Name:                 ref.Name,
+				Description:          ref.Description,
+				Active:               ref.Active,
+				DefenseToolProductId: product.Id,
+				DefenseLayerIds:      layerIds,
+			}},
+		})
+		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+			}
+			return nil, fmt.Errorf("could not create defense tool %q: %w", ref.Name, err)
+		}
+		if len(r.DefenseTool.Create.DefenseTools) == 0 {
+			return nil, fmt.Errorf("creating defense tool %q returned no tool", ref.Name)
+		}
+		created := r.DefenseTool.Create.DefenseTools[0]
+		slog.DebugContext(ctx, "defense tool created", "tool-name", ref.Name, "product-id", product.Id, "target-tool-id", created.Id, "layer-ids", layerIds)
+		result[key] = created.Id
+
+		// Fold the new tool into toolsByKey so a later ref in this same run
+		// that resolves to the same name+product+active reuses it -- and gets
+		// its own layers reconciled onto it -- instead of creating a second,
+		// identical tool. Two source refs can land on one target key even
+		// though they're distinct keys in toolsToReconcile: they need only
+		// differ in product ref and have product names that collapse together
+		// under resolveOrCreateDefenseToolProduct's case-insensitive name
+		// fallback.
+		//
+		// CreateTime/UpdateTime aren't in the create payload and stay zero.
+		// That's harmless: the duplicate tiebreak above runs only while
+		// indexing the pre-existing tools, and this key is by definition
+		// unoccupied at this point.
+		createdLayers := make([]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueToolDefensiveLayersDefensiveLayer, 0, len(created.DefensiveLayers))
+		for _, l := range created.DefensiveLayers {
+			createdLayers = append(createdLayers, dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueToolDefensiveLayersDefensiveLayer{Id: l.Id, Name: l.Name})
+		}
+		toolsByKey[targetKey] = dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool{
+			Id:              created.Id,
+			Name:            created.Name,
+			Description:     created.Description,
+			Active:          created.Active,
+			DefensiveLayers: createdLayers,
+			DefenseToolProduct: dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueToolDefenseToolProduct{
+				Id:  created.DefenseToolProduct.Id,
+				Ref: created.DefenseToolProduct.Ref,
+			},
+		}
+	}
+	return result, nil
+}
+
+// reconcileExistingDefenseTool adds any defense layers ref has that existing
+// lacks (creating layers as needed), leaving name/description/product/active
+// untouched -- those aren't part of the match criteria (see DefenseToolRef's
+// doc comment) so they're never overwritten on an already-matching tool.
+func reconcileExistingDefenseTool(ctx context.Context, client graphql.Client, db string, existing dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool, ref DefenseToolRef, layersByName map[string]dao.GetAllDefensiveLayersDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer, libraryLayersByName map[string]dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer) (string, error) {
+	have := make(map[string]bool, len(existing.DefensiveLayers))
+	layerIds := make([]string, 0, len(existing.DefensiveLayers))
+	for _, l := range existing.DefensiveLayers {
+		have[strings.ToLower(l.Name)] = true
+		layerIds = append(layerIds, l.Id)
+	}
+
+	var missing []string
+	for _, name := range ref.Layers {
+		if !have[strings.ToLower(name)] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return existing.Id, nil
+	}
+
+	newIds, err := resolveOrCreateDefenseLayerIds(ctx, client, db, missing, layersByName, libraryLayersByName)
+	if err != nil {
+		return "", err
+	}
+	layerIds = append(layerIds, newIds...)
+
+	r, err := dao.UpdateDefenseTool(ctx, client, dao.UpdateDefenseToolInput{
+		Db: db,
+		UpdateDefenseToolData: []dao.UpdateDefenseToolDataInput{{
+			Id:                   existing.Id,
+			Name:                 existing.Name,
+			Description:          existing.Description,
+			Active:               existing.Active,
+			DefenseToolProductId: existing.DefenseToolProduct.Id,
+			DefenseLayerIds:      layerIds,
+		}},
+	})
+	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return "", fmt.Errorf("could not update defense tool %q (id %s) with new layers: %w", existing.Name, existing.Id, err)
+	}
+	if len(r.DefenseTool.Update.DefenseTools) == 0 {
+		return "", fmt.Errorf("updating defense tool %q (id %s) returned no tool", existing.Name, existing.Id)
+	}
+	return r.DefenseTool.Update.DefenseTools[0].Id, nil
+}
+
+// resolveOrCreateDefenseLayerIds returns the target instance's id for each
+// layer name (case-insensitive), creating any that don't already exist.
+// layersByName is updated in place so later calls within the same
+// reconcileDefenseTools run reuse anything created here instead of creating
+// duplicates.
+//
+// A db-scoped defense layer can't be created directly: VECTR's create
+// mutation for it also tries to create a same-named library-level layer as a
+// side effect, and errors outright if one already exists. So creating one
+// here instead resolves-or-creates the library-level layer first (via
+// libraryLayersByName/resolveOrCreateLibraryDefenseLayerIds, reusing one that
+// already exists) and clones that into the db scope, which is the supported
+// path regardless of whether the library layer pre-existed.
+func resolveOrCreateDefenseLayerIds(ctx context.Context, client graphql.Client, db string, names []string, layersByName map[string]dao.GetAllDefensiveLayersDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer, libraryLayersByName map[string]dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer) ([]string, error) {
+	ids := make([]string, 0, len(names))
+	for _, name := range names {
+		key := strings.ToLower(name)
+		if l, ok := layersByName[key]; ok {
+			slog.DebugContext(ctx, "defense layer matched existing", "layer-name", name, "target-layer-id", l.Id)
+			ids = append(ids, l.Id)
+			continue
+		}
+
+		libraryLayerIds, err := resolveOrCreateLibraryDefenseLayerIds(ctx, client, []DefenseLayer{{Name: name}}, libraryLayersByName)
+		if err != nil {
+			return nil, fmt.Errorf("could not resolve library defense layer to clone for defense layer %q: %w", name, err)
+		}
+
+		r, err := dao.CloneDefenseLayer(ctx, client, dao.CloneLibraryDefenseLayerInput{
+			Db:                     db,
+			LibraryDefenseLayerIds: libraryLayerIds,
+		})
+		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+			}
+			return nil, fmt.Errorf("could not create defense layer %q: %w", name, err)
+		}
+		if len(r.DefenseLayer.Clone.DefenseLayers) == 0 {
+			return nil, fmt.Errorf("creating defense layer %q returned no layer", name)
+		}
+		created := r.DefenseLayer.Clone.DefenseLayers[0]
+		slog.DebugContext(ctx, "defense layer created", "layer-name", name, "target-layer-id", created.Id, "library-layer-id", libraryLayerIds[0])
+		layersByName[key] = dao.GetAllDefensiveLayersDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer{Id: created.Id, Name: created.Name}
+		ids = append(ids, created.Id)
+	}
+	return ids, nil
+}
+
+// resolveOrCreateLibraryDefenseLayerIds returns the target instance's id for
+// each library defense layer (case-insensitive match on name), creating any
+// that don't already exist. libraryLayersByName is updated in place so later
+// calls within the same reconcileDefenseTools run reuse anything created here
+// instead of creating duplicates.
+//
+// Library defense layers (attached to a DefenseToolProduct) are a distinct
+// resource from the db-scoped defense layers attached directly to a
+// DefenseTool (see resolveOrCreateDefenseLayerIds) -- they live in their own
+// id space even when names collide, so they're resolved and cached
+// separately rather than sharing layersByName.
+func resolveOrCreateLibraryDefenseLayerIds(ctx context.Context, client graphql.Client, layers []DefenseLayer, libraryLayersByName map[string]dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer) ([]string, error) {
+	ids := make([]string, 0, len(layers))
+	for _, layer := range layers {
+		key := strings.ToLower(layer.Name)
+		if l, ok := libraryLayersByName[key]; ok {
+			slog.DebugContext(ctx, "library defense layer matched existing", "layer-name", layer.Name, "target-layer-id", l.Id)
+			ids = append(ids, l.Id)
+			continue
+		}
+		r, err := dao.CreateLibraryDefenseLayer(ctx, client, dao.CreateLibraryDefenseLayerInput{
+			DefenseLayerData: []dao.CreateLibraryDefenseLayerDataInput{{Name: layer.Name, Description: layer.Description}},
+		})
+		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+			}
+			return nil, fmt.Errorf("could not create library defense layer %q: %w", layer.Name, err)
+		}
+		if len(r.DefenseLayer.CreateLibrary.DefenseLayers) == 0 {
+			return nil, fmt.Errorf("creating library defense layer %q returned no layer", layer.Name)
+		}
+		created := r.DefenseLayer.CreateLibrary.DefenseLayers[0]
+		slog.DebugContext(ctx, "library defense layer created", "layer-name", layer.Name, "target-layer-id", created.Id)
+		libraryLayersByName[key] = dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer{Id: created.Id, Name: created.Name}
+		ids = append(ids, created.Id)
+	}
+	return ids, nil
+}
+
+// resolveOrCreateDefenseToolProduct finds ref's matching product, creating
+// it (and resolving its vendor by name and library defense layers, if any)
+// if absent. productsByRef and productsByName are updated in place with
+// anything created.
+//
+// Matching tries ref.Ref first, then falls back to a case-insensitive name
+// match: CreateDefenseToolProductDataInput has no ref field, VECTR derives
+// ref itself on create, so a newly created product's ref may not equal the
+// source's ref -- a later restore of the same source data would never match
+// it by ref again. Name is the durable fallback for that case. When the name
+// fallback matches, productsByRef is also backfilled under ref.Ref so later
+// refs in this same run pointing at this product hit the fast path.
+//
+// If a product already exists (by either match), it's taken as-is -- its
+// layers are never diffed or backfilled here (unlike
+// reconcileExistingDefenseTool's handling of a tool's own db-scoped layers).
+func resolveOrCreateDefenseToolProduct(ctx context.Context, client graphql.Client, ref DefenseToolProductRef, productsByRef map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, productsByName map[string]dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, libraryLayersByName map[string]dao.GetAllLibraryDefensiveLayersLibraryDefensivelayersDefensiveLayerConnectionNodesDefensiveLayer) (dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct, error) {
+	if p, ok := productsByRef[ref.Ref]; ok {
+		slog.DebugContext(ctx, "defense tool product matched existing by ref", "product-name", ref.Name, "product-ref", ref.Ref, "target-product-id", p.Id)
+		return p, nil
+	}
+	if p, ok := productsByName[strings.ToLower(ref.Name)]; ok {
+		slog.DebugContext(ctx, "defense tool product matched existing by name fallback (ref mismatch)", "product-name", ref.Name, "source-ref", ref.Ref, "target-product-id", p.Id, "target-product-ref", p.Ref)
+		productsByRef[ref.Ref] = p
+		return p, nil
+	}
+
+	var vendorId *string
+	if ref.VendorName != "" {
+		vr, err := dao.FindVendor(ctx, client, ref.VendorName)
+		if err != nil {
+			if gqlObject, ok := gqlErrParse(err); ok {
+				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+			}
+			return dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct{}, fmt.Errorf("could not look up vendor %q: %w", ref.VendorName, err)
+		}
+		if len(vr.LibraryVendors.Nodes) > 0 {
+			id := vr.LibraryVendors.Nodes[0].Id
+			vendorId = &id
+		} else {
+			slog.WarnContext(ctx, "vendor not found in target instance, creating defense tool product without a vendor", "vendor-name", ref.VendorName, "product-ref", ref.Ref)
+		}
+	}
+
+	layers := ref.Layers
+	if len(layers) == 0 {
+		slog.WarnContext(ctx, "defense tool product has no defense layers; assigning placeholder layer so it can still be created -- review and reassign the correct layer(s)", "product-name", ref.Name, "source-ref", ref.Ref, "placeholder-layer", PLACEHOLDER_DEFENSE_LAYER_NAME)
+		layers = []DefenseLayer{{Name: PLACEHOLDER_DEFENSE_LAYER_NAME}}
+	}
+
+	layerIds, err := resolveOrCreateLibraryDefenseLayerIds(ctx, client, layers, libraryLayersByName)
+	if err != nil {
+		return dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct{}, fmt.Errorf("could not resolve library defense layers for product %q (source ref %q): %w", ref.Name, ref.Ref, err)
+	}
+
+	r, err := dao.CreateDefenseToolProduct(ctx, client, dao.CreateDefenseToolProductInput{
+		DefenseToolProducts: []dao.CreateDefenseToolProductDataInput{{
+			Name:            ref.Name,
+			VendorId:        vendorId,
+			DefenseLayerIds: layerIds,
+		}},
+	})
+	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
+		return dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct{}, fmt.Errorf("could not create defense tool product %q (source ref %q): %w", ref.Name, ref.Ref, err)
+	}
+	if len(r.DefenseToolProduct.Create.DefenseToolProducts) == 0 {
+		return dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct{}, fmt.Errorf("creating defense tool product %q (source ref %q) returned no product", ref.Name, ref.Ref)
+	}
+	created := r.DefenseToolProduct.Create.DefenseToolProducts[0]
+	product := dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct{
+		Id:   created.Id,
+		Name: created.Name,
+		Ref:  created.Ref,
+	}
+	slog.DebugContext(ctx, "defense tool product created", "product-name", ref.Name, "source-ref", ref.Ref, "target-product-id", product.Id, "target-product-ref", product.Ref, "vendor-id", vendorId, "layer-ids", layerIds)
+	productsByRef[product.Ref] = product
+	productsByName[strings.ToLower(product.Name)] = product
+	return product, nil
 }
 
 // restoreCampaigns creates campaigns and their associated test cases within a
@@ -252,9 +662,10 @@ func validateRestorePrerequisites(ctx context.Context, client graphql.Client, db
 //   - campaignsToRestore: A slice of campaign data objects to be restored.
 //   - orgMap: A map of organization names to their corresponding objects in
 //     the target instance, used for resolving organization IDs.
-//   - toolMap: A map of tool names to their corresponding objects in the
-//     target instance, used for resolving tool IDs.
-//   - idToolsMap: A map of serialized tool IDs to their generic tool definitions,
+//   - toolIdByKey: A map of DefenseToolRef.Key() to the corresponding tool's
+//     id in the target instance (see reconcileDefenseTools), used for
+//     resolving tool IDs.
+//   - idToolsMap: A map of serialized tool IDs to their DefenseToolRef,
 //     used to map outcomes from the serialized data to the target instance.
 //
 // Returns:
@@ -272,8 +683,8 @@ func restoreCampaigns(
 	assessmentName string,
 	campaignsToRestore []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign,
 	orgMap map[string]dao.FindOrganizationOrganizationsOrganizationConnectionNodesOrganization,
-	toolMap map[string]dao.GetAllDefenseToolsBluetoolsBlueToolConnectionNodesBlueTool,
-	idToolsMap map[string]GenericBlueTool,
+	toolIdByKey map[string]string,
+	idToolsMap map[string]DefenseToolRef,
 	optionalParams *RestoreOptionalParams,
 ) error {
 	// Step 5: Create the campaigns
@@ -321,44 +732,62 @@ func restoreCampaigns(
 	testCaseCount := 0
 	for _, c := range campaignsToRestore {
 		// there could be a mix of test case types in a campaign, so add both types in
-		tc_with_library := NewGroupedCreateTestCaseWithLibraryIdInput(dao.CreateTestCaseMatchByLibraryIdInput{
-			Db:                   db,
-			CampaignId:           campaign_map[c.Name],
-			CreateTestCaseInputs: []dao.CreateTestCaseDataWithLibraryIdInput{},
-		})
+		tc_with_library := NewGroupedCreateTestCaseWithLibraryIdInput(db, campaign_map[c.Name])
 
 		tc_no_template := dao.CreateTestCaseWithoutTemplateInput{
-			Db:           db,
-			CampaignId:   campaign_map[c.Name],
-			TestCaseData: []dao.CreateTestCaseDataInput{},
+			Db:                         db,
+			CampaignId:                 campaign_map[c.Name],
+			TestCaseData:               []dao.CreateTestCaseDataInput{},
+			SuppressAutoTimelineEvents: true,
 		}
 
+		timelineEntriesCount := 0
 		// have to do this here (maybe make this an object in the future)
 		// but basically, I need to check if the outcome is in the map
 		// if it is not, throw an error
 		for _, serialized_tc := range c.TestCases {
-			if _, ok := outcomeStatusMap[serialized_tc.Status]; !ok {
-				slog.ErrorContext(ctx, "could not find outcome for this test case", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name, "campaign-id", c.Id, "test-case-id", serialized_tc.Id)
-				return fmt.Errorf("outcome %s not found", serialized_tc.Status)
+			status, ok := outcomeStatusMap[serialized_tc.Status]
+			if !ok {
+				slog.WarnContext(ctx, "could not find outcome for this test case, passing it through as-is (forwards compat)", "outcome", serialized_tc.Status, "test-case", serialized_tc.Name, "campaign", c.Name, "campaign-id", c.Id, "test-case-id", serialized_tc.Id)
+				status = dao.TestCaseStatus(serialized_tc.Status)
 			}
+			timelineEntriesCount += len(serialized_tc.TimelineEvents)
+			// OrgMap is a resource vat itself manages and requires -- every test
+			// case must carry an organization. Confirmed against a live instance
+			// that VECTR rejects a create with a blank organization, but we don't
+			// defer to that: a missing org here means our own data is
+			// inconsistent, so fail fast with a clear error instead of letting
+			// VECTR reject it downstream with a less useful message.
+			if len(serialized_tc.Organizations) == 0 {
+				slog.ErrorContext(ctx, "test case has no organization set", "test-case", serialized_tc.Name, "campaign", c.Name, "campaign-id", c.Id, "test-case-id", serialized_tc.Id)
+				return fmt.Errorf("test case %s (campaign %s) has no organization set", serialized_tc.Id, c.Name)
+			}
+			organization := serialized_tc.Organizations[0].Name
 			testCaseData := dao.CreateTestCaseDataInput{
+				// Correlation token echoed back by VECTR on the created item; the
+				// source test case id is already unique within this request, so
+				// there's no need to mint a fresh one.
+				ClientId:         serialized_tc.Id,
 				Name:             serialized_tc.Name,
 				Description:      serialized_tc.Description,
 				Phase:            serialized_tc.Phase.Name,
 				Technique:        serialized_tc.MitreId,
-				Organization:     serialized_tc.Organizations[0].Name,
-				Status:           outcomeStatusMap[serialized_tc.Status],
+				Organization:     organization,
+				Status:           status,
 				DetectionSteps:   serialized_tc.DetectionGuidance,
 				PreventionSteps:  serialized_tc.PreventionGuidance,
 				OutcomePath:      serialized_tc.Outcome.Path,
 				OutcomeNotes:     serialized_tc.OutcomeNotes,
-				DetectionTime:    serialized_tc.DetectionTime.CreateTime,
 				References:       serialized_tc.References,
 				OperatorGuidance: serialized_tc.OperatorGuidance,
-				AttackStart:      serialized_tc.AttackStart.CreateTime,
-				AttackStop:       serialized_tc.AttackStop.CreateTime,
 				DataVer:          serialized_tc.DataVer,
 				OverrideOutcome:  serialized_tc.OverrideOutcome,
+				UserContext:      serialized_tc.UserContext,
+				//AttackSuccess:    serialized_tc.AttackSuccess, // handled below
+				// these are no longer required, they are handled by timeline events
+				//AttackStart:      serialized_tc.AttackStart.CreateTime,
+				//AttackStop:       serialized_tc.AttackStop.CreateTime,
+				//DetectionTime:    serialized_tc.DetectionTime.CreateTime,
 				//Tags:                  []string{}, //to be handled below
 				//Targets:               []string{}, // to be handled below
 				//Sources:               []string{},
@@ -370,10 +799,17 @@ func restoreCampaigns(
 				//RedTools:              []RedToolInput{},
 				//DefenseToolOutcomes:   []DefenseToolOutcomeInput{},   // handle below
 			}
-			if testCaseData.AttackStart == 0 {
-				slog.WarnContext(ctx, "Attack Start is set to 0, reset to the AttackStop time", "attack-stop-time", testCaseData.AttackStop, "campaign-name", c.Name, "test-case-name", serialized_tc.Name)
-				testCaseData.AttackStart = testCaseData.AttackStop
+
+			if len(strings.TrimSpace(string(serialized_tc.AttackSuccess))) == 0 {
+				testCaseData.AttackSuccess = nil
+			} else {
+				testCaseData.AttackSuccess = &serialized_tc.AttackSuccess
 			}
+			// Need to check if this logic has issues still
+			//if testCaseData.AttackStart == 0 {
+			//	slog.WarnContext(ctx, "Attack Start is set to 0, reset to the AttackStop time", "attack-stop-time", testCaseData.AttackStop, "campaign-name", c.Name, "test-case-name", serialized_tc.Name)
+			//	testCaseData.AttackStart = testCaseData.AttackStop
+			//}
 			for _, tag := range serialized_tc.Tags {
 				testCaseData.Tags = append(testCaseData.Tags, tag.Name)
 			}
@@ -420,9 +856,9 @@ func restoreCampaigns(
 
 			for _, result := range serialized_tc.DefenseToolOutcomes {
 				testCaseData.DefenseToolOutcomes = append(testCaseData.DefenseToolOutcomes, dao.DefenseToolOutcomeInput{
-					// take the stringifed integer from the serialized data, look up the tool name from the original data set
-					//		and then look up the id in the new instance
-					DefenseToolId: toolMap[idToolsMap[strconv.Itoa(result.DefenseToolId)].Name].Id,
+					// take the stringified integer from the serialized data, look up the source tool's ref from the original data set,
+					//		and then look up the reconciled id in the new instance
+					DefenseToolId: toolIdByKey[idToolsMap[strconv.Itoa(result.DefenseToolId)].Key()],
 					OutcomeId:     result.OutcomeId,
 				})
 			}
@@ -444,28 +880,151 @@ func restoreCampaigns(
 			"test_case_count", tc_with_library.Len(),
 			"test-case-count-no-template", len(tc_no_template.TestCaseData),
 			"assessment_name", assessmentName)
+		// source test case ID (clientId) -> new test case ID, for this campaign only.
+		testCaseIdMap := make(map[string]string, tc_with_library.Len()+len(tc_no_template.TestCaseData))
 		if tc_with_library.Len() > 0 {
-			inserts := tc_with_library.GenerateInsertsData()
-			for _, insertdata := range inserts {
-				_, err := dao.CreateTestCasesByLibraryId(ctx, client, insertdata)
+			for _, batch := range tc_with_library.GenerateInsertsData() {
+				r, err := dao.CreateTestCasesByLibraryId(ctx, client, batch)
 				if err != nil {
 					if gqlObject, ok := gqlErrParse(err); ok {
 						slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 					}
 					return fmt.Errorf("could not write test cases for %s, campaign: %s; check vectr version: %w", assessmentName, c.Name, err)
 				}
-				testCaseCount += len(insertdata.CreateTestCaseInputs)
+				for _, item := range r.TestCase.CreateWithTemplateMatchByLibraryId.TestCaseCreateItems {
+					testCaseIdMap[item.ClientId] = item.TestCase.Id
+				}
+				testCaseCount += len(batch.CreateTestCaseInputs)
 			}
 		}
 		if len(tc_no_template.TestCaseData) > 0 {
-			_, err := dao.CreateTestCasesNoTemplate(ctx, client, tc_no_template)
+			r, err := dao.CreateTestCasesNoTemplate(ctx, client, tc_no_template)
 			if err != nil {
 				if gqlObject, ok := gqlErrParse(err); ok {
 					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 				}
 				return fmt.Errorf("could not write test cases for %s: %w", assessmentName, err)
 			}
+			for _, item := range r.TestCase.CreateWithoutTemplate.TestCaseCreateItems {
+				testCaseIdMap[item.ClientId] = item.TestCase.Id
+			}
 			testCaseCount += len(tc_no_template.TestCaseData)
+		}
+		// Here's where we add the timelines
+		if timelineEntriesCount > 0 {
+			timelineEventInsert := &dao.CreateTimelineEventsInput{
+				Db:     db,
+				Events: make([]dao.TimelineEventInput, 0, timelineEntriesCount),
+			}
+
+			for _, stc := range c.TestCases {
+				if _, ok := testCaseIdMap[stc.Id]; !ok {
+					continue
+				}
+				for _, te := range stc.TimelineEvents {
+					teToInsert := &dao.TimelineEventInput{
+						ClientId:    uuid.NewString(),
+						TestCaseId:  testCaseIdMap[stc.Id],
+						Team:        te.Team,
+						Description: te.ManualDescription, // I _think_ I can just write this. If there is nothing there, then this becomes an omit empty
+						Type:        te.Type,
+						CreateTime:  time.UnixMilli(int64(te.CreateTime)),
+						Designation: te.Designation,
+						//ToolOutcomeChange: dao.ToolOutcomeChangeEventInput{
+						//	OutcomeId: te.ToolOutcomeChange.OutcomeId,
+						//	ToolId:    toolIdByKey[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Key()],
+						//},
+					}
+
+					if strings.EqualFold(te.Type, "Manual") {
+						teToInsert.ManualEvent = &dao.ManualTimelineEventInput{
+							Placeholder: true,
+						}
+					} else if strings.EqualFold(te.Type, "FieldChange") {
+						switch {
+						case strings.EqualFold(te.FieldName, "status"):
+							status, ok := outcomeStatusMap[te.FieldAction]
+							if !ok {
+								slog.WarnContext(ctx, "unrecognized status in status field-change event, passing it through as-is (forwards compat)",
+									"assessment-name", assessmentName,
+									"campaign_name", c.Name,
+									"source-test-case-id", stc.Id,
+									"source-test-case-name", stc.Name,
+									"timeline-event-id", te.Id,
+									"status", te.FieldAction)
+								status = dao.TestCaseStatus(te.FieldAction)
+							}
+							teToInsert.StatusChange = &dao.StatusChangeEventInput{
+								Status: status,
+							}
+						case strings.EqualFold(te.FieldName, "outcomeId"):
+							teToInsert.OutcomeChange = &dao.OutcomeChangeEventInput{
+								OutcomeId: te.FieldAction,
+							}
+							if te.ToolOutcomeChange != nil {
+								teToInsert.ToolOutcomeChange = &dao.ToolOutcomeChangeEventInput{
+									OutcomeId: te.ToolOutcomeChange.OutcomeId,
+									ToolId:    toolIdByKey[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Key()],
+								}
+							}
+						case strings.EqualFold(te.FieldName, "toolOutcome"):
+							if te.ToolOutcomeChange == nil {
+								slog.ErrorContext(ctx, "toolOutcome field change event is missing its ToolOutcomeChange payload",
+									"assessment-name", assessmentName,
+									"campaign_name", c.Name,
+									"source-test-case-id", stc.Id,
+									"source-test-case-name", stc.Name,
+									"timeline-event-id", te.Id)
+								return fmt.Errorf("timeline event for test case %s has field-name toolOutcome but no ToolOutcomeChange data", stc.Id)
+							}
+							teToInsert.ToolOutcomeChange = &dao.ToolOutcomeChangeEventInput{
+								OutcomeId: te.ToolOutcomeChange.OutcomeId,
+								ToolId:    toolIdByKey[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Key()],
+							}
+						default:
+							slog.WarnContext(ctx, "unrecognized field change field name, skipping (forwards compat)", "assessment-name", assessmentName, "field-name", te.FieldName)
+						}
+					} else {
+						slog.WarnContext(ctx, "unrecognized timeline event type, skipping (forwards compat)", "assessment-name", assessmentName, "event-type", te.Type)
+					}
+					slog.DebugContext(ctx, "Prepared timeline event",
+						"assessment-name", assessmentName,
+						"campaign_name", c.Name,
+						"source-test-case-id", stc.Id,
+						"test-case-id", teToInsert.TestCaseId,
+						"event-type", te.Type,
+						"event", teToInsert)
+					timelineEventInsert.Events = append(timelineEventInsert.Events, *teToInsert)
+				}
+			}
+			respTimelineResponse, err := dao.CreateTimelineEvents(ctx, client, *timelineEventInsert)
+			if err != nil {
+				if gqlObject, ok := gqlErrParse(err); ok {
+					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+				}
+				return fmt.Errorf("could not write timeline events for %s, campaign: %s; check vectr version: %w", assessmentName, c.Name, err)
+			}
+			// this is a way to check if errors happened as well
+			if respTimelineResponse.TimelineEvent.Create.Summary.Failed > 0 {
+				for _, errmsg := range respTimelineResponse.TimelineEvent.Create.Items {
+					if len(errmsg.Errors) > 0 {
+						for _, te := range timelineEventInsert.Events {
+							if strings.EqualFold(errmsg.ClientId, te.ClientId) {
+								slog.ErrorContext(ctx, "failed to create timeline event",
+									"assessment-name", assessmentName,
+									"campaign_name", c.Name,
+									"client-id", te.ClientId,
+									"test-case-id", te.TestCaseId,
+									"event", te,
+									"errors", errmsg.Errors)
+								break
+							}
+
+						}
+					}
+				}
+				return fmt.Errorf("could not write timeline events for %s, campaign: %s; %d", assessmentName, c.Name, respTimelineResponse.TimelineEvent.Create.Summary.Failed)
+			}
 		}
 	}
 	slog.InfoContext(ctx, "Test cases created", "assessment-name", assessmentName, "test-case-count", testCaseCount)
@@ -593,7 +1152,6 @@ func validateLibraryTestCases(ctx context.Context, client graphql.Client, librar
 // Error Handling:
 // The function returns detailed errors for the following scenarios:
 //   - Missing organizations (`ErrOrgNotFound`).
-//   - Missing tools (`ErrMissingTools`).
 //   - Missing library assessments (`ErrMissingLibraryAssessment`).
 //   - A local assessment already exists (`ErrAssessmentAlreadyExists`).
 //   - Invalid or blank assessment name overrides (`ErrInvalidAssessmentName`).
@@ -602,23 +1160,22 @@ func validateLibraryTestCases(ctx context.Context, client graphql.Client, librar
 func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad *AssessmentData, optionalParams *RestoreOptionalParams) error {
 	slog.InfoContext(ctx, "Starting RestoreAssessment", "db", db, "assessment_name", ad.Assessment.Name)
 
-	if ad.Metadata != nil {
-		ad.Metadata.LoadData = NewVatOpMetadata(ctx)
-	} else {
-		ad.Metadata = &VatMetadata{
-			LoadData: NewVatOpMetadata(ctx),
-		}
+	// restoreInfo is an artifact of this single restore call — it's never
+	// stored on AssessmentData (see its doc comment), just used here for
+	// the version-mismatch warning and folded into the target VECTR
+	// instance's own metadata below.
+	restoreInfo := NewVatOpMetadata(ctx)
+
+	if ad.Manifest.VectrVersion != "" && ad.Manifest.VectrVersion != restoreInfo.VectrVersion {
+		slog.WarnContext(ctx, "Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Manifest.VectrVersion, "live-vectr-version", restoreInfo.VectrVersion)
 	}
 
-	if ad.Metadata.LoadData.VectrVersion != TAGGED_VECTR_VERSION {
-		slog.WarnContext(ctx, "VECTR version mismatch, this version of vat was built for another version of VECTR", "live-vectr-version", ad.Metadata.LoadData.VectrVersion, "vat-vectr-version", TAGGED_VECTR_VERSION)
+	org_map, err := validateRestorePrerequisites(ctx, client, db, ad.OrgMap)
+	if err != nil {
+		return err
 	}
 
-	if ad.Metadata.SaveData != nil && ad.Metadata.SaveData.VectrVersion != ad.Metadata.LoadData.VectrVersion {
-		slog.WarnContext(ctx, "Save data does not match version you are loading into. The restore may not work correctly", "save-vectr-version", ad.Metadata.SaveData.VectrVersion, "live-vectr-version", ad.Metadata.LoadData.VectrVersion)
-	}
-
-	org_map, tool_map, err := validateRestorePrerequisites(ctx, client, db, ad.Organizations, ad.ToolsMap, ad.OptionalFields.OrgMap)
+	toolIdByKey, err := reconcileDefenseTools(ctx, client, db, ad.ToolsMap)
 	if err != nil {
 		return err
 	}
@@ -626,6 +1183,15 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	if optionalParams.AssessmentName != "" {
 		slog.DebugContext(ctx, "overiding assessment name", "old-assessment-name", ad.Assessment.Name, "new-assessment-name", optionalParams.AssessmentName)
 		ad.Assessment.Name = optionalParams.AssessmentName
+	}
+
+	if optionalParams.ResetGlobalId {
+		newGlobalId, err := uuid.NewRandom()
+		if err != nil {
+			return fmt.Errorf("when re-writing global id (--reset-id) could not generate uuid: %w", err)
+		}
+		slog.DebugContext(ctx, "resetting assessment global id", "assessment-name", ad.Assessment.Name, "old-global-id", ad.Assessment.GlobalId, "new-global-id", newGlobalId.String())
+		ad.Assessment.GlobalId = newGlobalId.String()
 	}
 
 	lookup_assessments, err := dao.FindExistingAssessment(ctx, client, db, ad.Assessment.Name)
@@ -642,7 +1208,9 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	// Step 3: Check if there is a template name in the seralized data, if so check in the instance (error if not)
 	// If the user wants to ignore error, go ahead and import template test cases
 	// If no template name, then go ahead and add template test cases in
-	if !optionalParams.ForceEnvOnly {
+	if optionalParams.ForceEnvOnly {
+		slog.WarnContext(ctx, "--force-env-only set, skipping template/library test case validation", "assessment-name", ad.Assessment.Name)
+	} else {
 		if optionalParams.OverrideAssessmentTemplate {
 			slog.DebugContext(ctx, "adding template test cases directly")
 			input := dao.CreateTestCaseTemplateInput{
@@ -653,7 +1221,18 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 			if len(ad.LibraryTestCases) > 0 {
 				for _, template_test_case := range ad.LibraryTestCases {
 					slog.DebugContext(ctx, "library test case", "name", template_test_case.Name, "template_id", template_test_case.LibraryTestCaseId)
-					tctd, errors := createTemplateData(template_test_case)
+					tctd, errors, err := createTemplateData(template_test_case)
+					if err != nil {
+						slog.ErrorContext(ctx, "could not build template test case data",
+							"test-case-id", template_test_case.Id,
+							"test-case-library-id", template_test_case.LibraryTestCaseId,
+							"test-case-name", template_test_case.Name,
+							"assessment-name", ad.Assessment.Name,
+							"db", db,
+							"err", err,
+						)
+						return err
+					}
 					if len(errors) > 0 {
 						for _, err := range errors {
 							slog.WarnContext(ctx, "parsing discrepencies found, they were recovered but review if needed",
@@ -726,6 +1305,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 				Description: ad.Assessment.Description,
 				KillChainId: ad.Assessment.KillChain.Id,
 				DataVer:     ad.Assessment.DefaultTcDataVer,
+				GlobalId:    ad.Assessment.GlobalId,
 				//OrganizationIds: []string{}, //handle below
 				//Metadata: []MetadataKeyValuePairInput{}, // handle below
 			},
@@ -735,7 +1315,7 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 	for _, o := range ad.Assessment.Organizations {
 		assessment.AssessmentData[0].OrganizationIds = append(assessment.AssessmentData[0].OrganizationIds, org_map[o.Name].Id)
 	}
-	ad.Assessment.Metadata = loadVatMetadata(ad.Assessment.Metadata, ad.Metadata)
+	ad.Assessment.Metadata = loadVatMetadata(ad.Assessment.Metadata, ad.Manifest, restoreInfo)
 	for _, md := range ad.Assessment.Metadata {
 		assessment.AssessmentData[0].Metadata = append(assessment.AssessmentData[0].Metadata, dao.MetadataKeyValuePairInput(md))
 	}
@@ -745,11 +1325,14 @@ func RestoreAssessment(ctx context.Context, client graphql.Client, db string, ad
 		if gqlObject, ok := gqlErrParse(err); ok {
 			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
 		}
+		if isDuplicateGlobalIdError(err) {
+			return fmt.Errorf("could not create assessment container: %s, global-id: %s: %w", assessment.AssessmentData[0].Name, assessment.AssessmentData[0].GlobalId, ErrDuplicateGlobalId)
+		}
 		return fmt.Errorf("could not create assessment container: %s: %w", assessment.AssessmentData[0].Name, err)
 	}
 	//a.Assessment.Create.Assessments[0].Id
 
-	err = restoreCampaigns(ctx, client, db, a.Assessment.Create.Assessments[0].Id, ad.Assessment.Name, ad.Assessment.Campaigns, org_map, tool_map, ad.IdToolsMap, optionalParams)
+	err = restoreCampaigns(ctx, client, db, a.Assessment.Create.Assessments[0].Id, ad.Assessment.Name, ad.Assessment.Campaigns, org_map, toolIdByKey, ad.IdToolsMap, optionalParams)
 	if err != nil {
 		if optionalParams.DeleteOnFailure {
 			slog.ErrorContext(ctx, "deleting assessment since a failure occured", "assessment-name", ad.Assessment.Name, "db", db)
@@ -816,6 +1399,9 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 
 	targetAssessment, err := dao.FindExistingAssessment(ctx, client, db, targetAssessmentName)
 	if err != nil {
+		if gqlObject, ok := gqlErrParse(err); ok {
+			slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+		}
 		return fmt.Errorf("could not look up target assessment '%s': %w", targetAssessmentName, err)
 	}
 	if len(targetAssessment.Assessments.Nodes) == 0 {
@@ -831,49 +1417,48 @@ func RestoreCampaign(ctx context.Context, client graphql.Client, db string, ad *
 		}
 	}
 
-	if !optionalParams.ForceEnvOnly {
+	if optionalParams.ForceEnvOnly {
+		slog.WarnContext(ctx, "--force-env-only set, skipping library test case validation", "assessment-name", ad.Assessment.Name, "campaign-name", sourceCampaignName)
+	} else {
 		if err := validateLibraryTestCases(ctx, client, libraryTestCaseIDs, ad.TemplateAssessment); err != nil {
 			return err
 		}
 	}
 
-	// Collect organizations for the specific campaign
-	campaignOrgNames := make([]string, 0, len(campaignToRestore.Organizations))
-	for _, org := range campaignToRestore.Organizations {
-		campaignOrgNames = append(campaignOrgNames, org.Name)
-	}
-
 	// Collect tools for the specific campaign
-	campaignToolsToValidate := make(map[string]GenericBlueTool)
+	campaignToolsToReconcile := make(map[string]DefenseToolRef)
 	for _, tc := range campaignToRestore.TestCases {
 		for _, outcome := range tc.DefenseToolOutcomes {
 			toolID := strconv.Itoa(outcome.DefenseToolId)
 			if tool, ok := ad.IdToolsMap[toolID]; ok {
-				campaignToolsToValidate[tool.Name] = tool
+				campaignToolsToReconcile[tool.Key()] = tool
 			}
 		}
 	}
 
-	// Create a temporary optionalOrgMap for the specific campaign's organizations
-	campaignOptionalOrgMap := make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization)
-	if ad.OptionalFields.OrgMap != nil {
-		for _, orgName := range campaignOrgNames {
-			if orgDetail, ok := ad.OptionalFields.OrgMap[orgName]; ok {
-				campaignOptionalOrgMap[orgName] = orgDetail
-			}
+	// Restrict the org map to the organizations used by this campaign
+	campaignOrgMap := make(map[string]dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentOrganizationsOrganization, len(campaignToRestore.Organizations))
+	for _, org := range campaignToRestore.Organizations {
+		if orgDetail, ok := ad.OrgMap[org.Name]; ok {
+			campaignOrgMap[org.Name] = orgDetail
 		}
 	}
 
-	org_map, tool_map, err := validateRestorePrerequisites(ctx, client, db, campaignOrgNames, campaignToolsToValidate, campaignOptionalOrgMap)
+	org_map, err := validateRestorePrerequisites(ctx, client, db, campaignOrgMap)
 	if err != nil {
 		return err
 	}
 
-	return restoreCampaigns(ctx, client, db, targetAssessmentId, targetAssessmentName, []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign{campaignToRestore}, org_map, tool_map, ad.IdToolsMap, optionalParams)
+	toolIdByKey, err := reconcileDefenseTools(ctx, client, db, campaignToolsToReconcile)
+	if err != nil {
+		return err
+	}
+
+	return restoreCampaigns(ctx, client, db, targetAssessmentId, targetAssessmentName, []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentCampaignsCampaign{campaignToRestore}, org_map, toolIdByKey, ad.IdToolsMap, optionalParams)
 }
 
-func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair, vatMetadata *VatMetadata) []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair {
-	for k, v := range vatMetadata.Serialize() {
+func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair, manifest Manifest, restoreInfo VatOpMetadata) []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair {
+	for k, v := range AsVectrMetadataPairs(manifest, restoreInfo) {
 		md = append(md, dao.GetAllAssessmentsAssessmentsAssessmentConnectionNodesAssessmentMetadataMetadataKeyValuePair{
 			Key:   k,
 			Value: v,
@@ -882,7 +1467,15 @@ func loadVatMetadata(md []dao.GetAllAssessmentsAssessmentsAssessmentConnectionNo
 	return md
 }
 
-func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase) (dao.CreateTestCaseTemplateDataInput, []error) {
+// createTemplateData builds a CreateTestCaseTemplateDataInput from a library
+// test case. The returned []error is recoverable parsing discrepancies the
+// caller can log and continue past; the returned error is fatal -- OrgMap is
+// a resource vat itself manages and requires, so a missing organization here
+// means our own data is inconsistent, not something to paper over.
+func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcasesByIdsTestCaseConnectionNodesTestCase) (dao.CreateTestCaseTemplateDataInput, []error, error) {
+	if len(template_test_case.Organizations) == 0 {
+		return dao.CreateTestCaseTemplateDataInput{}, nil, fmt.Errorf("test case %s (library id %s) has no organization set", template_test_case.Name, template_test_case.LibraryTestCaseId)
+	}
 	var errors []error
 	ttc := dao.CreateTestCaseTemplateDataInput{
 		LibraryTestCaseId: template_test_case.LibraryTestCaseId,
@@ -898,6 +1491,8 @@ func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcas
 		References:      template_test_case.References,
 		// RedTools:          []RedToolInput{}, //handle below
 		OperatorGuidance: template_test_case.OperatorGuidance,
+		UserContext:      template_test_case.UserContext,
+
 		// RedTeamMetadata:   []MetadataKeyValuePairInput{}, //handle below
 		// BlueTeamMetadata:  []MetadataKeyValuePairInput{}, //handle below
 		// AttackAutomation:  &AttackAutomationInput{},      //handle below
@@ -930,18 +1525,29 @@ func createTemplateData(template_test_case dao.GetLibraryTestCasesLibraryTestcas
 			break
 		}
 	}
-	return ttc, errors
+	return ttc, errors, nil
 }
 
 func buildAttackAutomationInput[A AutomationArgumentTypes, PA pointerAutomationArgs[A], T Automator[A]](automator T) (*dao.AttackAutomationInput, []error) {
+	errors := make([]error, 0, len(automator.GetAutomationArgument()))
+
+	executor, ok := executorMap[automator.GetAutomationExecutor()]
+	if !ok {
+		errors = append(errors, fmt.Errorf("cmd: %s, unrecognized executor: %s, passing it through as-is (forwards compat)", automator.GetAutomationCmd(), automator.GetAutomationExecutor()))
+		executor = dao.AttackAutomationExecutor(automator.GetAutomationExecutor())
+	}
+	cleanupExecutor, ok := executorMap[automator.GetAutomationCleanupExecutor()]
+	if !ok {
+		errors = append(errors, fmt.Errorf("cmd: %s, unrecognized cleanup executor: %s, passing it through as-is (forwards compat)", automator.GetAutomationCmd(), automator.GetAutomationCleanupExecutor()))
+		cleanupExecutor = dao.AttackAutomationExecutor(automator.GetAutomationCleanupExecutor())
+	}
 	attackAutomation := &dao.AttackAutomationInput{
 		Command:         automator.GetAutomationCmd(),
-		Executor:        executorMap[automator.GetAutomationExecutor()],
+		Executor:        executor,
 		CleanupCommand:  automator.GetAutomationCleanup(),
-		CleanupExecutor: executorMap[automator.GetAutomationCleanupExecutor()],
+		CleanupExecutor: cleanupExecutor,
 	}
 	args := automator.GetAutomationArgument()
-	errors := make([]error, 0, len(args))
 	for _, autoArg := range args {
 		pointerAutoArg := PA(&autoArg)
 		// set the default type to be a string, if it is set to path we will use that, else use the string
