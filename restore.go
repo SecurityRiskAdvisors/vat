@@ -911,118 +911,120 @@ func restoreCampaigns(
 			testCaseCount += len(tc_no_template.TestCaseData)
 		}
 		// Here's where we add the timelines
-		timelineEventInsert := &dao.CreateTimelineEventsInput{
-			Db:     db,
-			Events: make([]dao.TimelineEventInput, 0, timelineEntriesCount),
-		}
-
-		for _, stc := range c.TestCases {
-			if _, ok := testCaseIdMap[stc.Id]; !ok {
-				continue
+		if timelineEntriesCount > 0 {
+			timelineEventInsert := &dao.CreateTimelineEventsInput{
+				Db:     db,
+				Events: make([]dao.TimelineEventInput, 0, timelineEntriesCount),
 			}
-			for _, te := range stc.TimelineEvents {
-				teToInsert := &dao.TimelineEventInput{
-					ClientId:    uuid.NewString(),
-					TestCaseId:  testCaseIdMap[stc.Id],
-					Team:        te.Team,
-					Description: te.ManualDescription, // I _think_ I can just write this. If there is nothing there, then this becomes an omit empty
-					Type:        te.Type,
-					CreateTime:  time.UnixMilli(int64(te.CreateTime)),
-					Designation: te.Designation,
-					//ToolOutcomeChange: dao.ToolOutcomeChangeEventInput{
-					//	OutcomeId: te.ToolOutcomeChange.OutcomeId,
-					//	ToolId:    toolIdByKey[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Key()],
-					//},
-				}
 
-				if strings.EqualFold(te.Type, "Manual") {
-					teToInsert.ManualEvent = &dao.ManualTimelineEventInput{
-						Placeholder: true,
+			for _, stc := range c.TestCases {
+				if _, ok := testCaseIdMap[stc.Id]; !ok {
+					continue
+				}
+				for _, te := range stc.TimelineEvents {
+					teToInsert := &dao.TimelineEventInput{
+						ClientId:    uuid.NewString(),
+						TestCaseId:  testCaseIdMap[stc.Id],
+						Team:        te.Team,
+						Description: te.ManualDescription, // I _think_ I can just write this. If there is nothing there, then this becomes an omit empty
+						Type:        te.Type,
+						CreateTime:  time.UnixMilli(int64(te.CreateTime)),
+						Designation: te.Designation,
+						//ToolOutcomeChange: dao.ToolOutcomeChangeEventInput{
+						//	OutcomeId: te.ToolOutcomeChange.OutcomeId,
+						//	ToolId:    toolIdByKey[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Key()],
+						//},
 					}
-				} else if strings.EqualFold(te.Type, "FieldChange") {
-					switch {
-					case strings.EqualFold(te.FieldName, "status"):
-						status, ok := outcomeStatusMap[te.FieldAction]
-						if !ok {
-							slog.WarnContext(ctx, "unrecognized status in status field-change event, passing it through as-is (forwards compat)",
-								"assessment-name", assessmentName,
-								"campaign_name", c.Name,
-								"source-test-case-id", stc.Id,
-								"source-test-case-name", stc.Name,
-								"timeline-event-id", te.Id,
-								"status", te.FieldAction)
-							status = dao.TestCaseStatus(te.FieldAction)
+
+					if strings.EqualFold(te.Type, "Manual") {
+						teToInsert.ManualEvent = &dao.ManualTimelineEventInput{
+							Placeholder: true,
 						}
-						teToInsert.StatusChange = &dao.StatusChangeEventInput{
-							Status: status,
-						}
-					case strings.EqualFold(te.FieldName, "outcomeId"):
-						teToInsert.OutcomeChange = &dao.OutcomeChangeEventInput{
-							OutcomeId: te.FieldAction,
-						}
-						if te.ToolOutcomeChange != nil {
+					} else if strings.EqualFold(te.Type, "FieldChange") {
+						switch {
+						case strings.EqualFold(te.FieldName, "status"):
+							status, ok := outcomeStatusMap[te.FieldAction]
+							if !ok {
+								slog.WarnContext(ctx, "unrecognized status in status field-change event, passing it through as-is (forwards compat)",
+									"assessment-name", assessmentName,
+									"campaign_name", c.Name,
+									"source-test-case-id", stc.Id,
+									"source-test-case-name", stc.Name,
+									"timeline-event-id", te.Id,
+									"status", te.FieldAction)
+								status = dao.TestCaseStatus(te.FieldAction)
+							}
+							teToInsert.StatusChange = &dao.StatusChangeEventInput{
+								Status: status,
+							}
+						case strings.EqualFold(te.FieldName, "outcomeId"):
+							teToInsert.OutcomeChange = &dao.OutcomeChangeEventInput{
+								OutcomeId: te.FieldAction,
+							}
+							if te.ToolOutcomeChange != nil {
+								teToInsert.ToolOutcomeChange = &dao.ToolOutcomeChangeEventInput{
+									OutcomeId: te.ToolOutcomeChange.OutcomeId,
+									ToolId:    toolIdByKey[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Key()],
+								}
+							}
+						case strings.EqualFold(te.FieldName, "toolOutcome"):
+							if te.ToolOutcomeChange == nil {
+								slog.ErrorContext(ctx, "toolOutcome field change event is missing its ToolOutcomeChange payload",
+									"assessment-name", assessmentName,
+									"campaign_name", c.Name,
+									"source-test-case-id", stc.Id,
+									"source-test-case-name", stc.Name,
+									"timeline-event-id", te.Id)
+								return fmt.Errorf("timeline event for test case %s has field-name toolOutcome but no ToolOutcomeChange data", stc.Id)
+							}
 							teToInsert.ToolOutcomeChange = &dao.ToolOutcomeChangeEventInput{
 								OutcomeId: te.ToolOutcomeChange.OutcomeId,
 								ToolId:    toolIdByKey[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Key()],
 							}
+						default:
+							slog.WarnContext(ctx, "unrecognized field change field name, skipping (forwards compat)", "assessment-name", assessmentName, "field-name", te.FieldName)
 						}
-					case strings.EqualFold(te.FieldName, "toolOutcome"):
-						if te.ToolOutcomeChange == nil {
-							slog.ErrorContext(ctx, "toolOutcome field change event is missing its ToolOutcomeChange payload",
-								"assessment-name", assessmentName,
-								"campaign_name", c.Name,
-								"source-test-case-id", stc.Id,
-								"source-test-case-name", stc.Name,
-								"timeline-event-id", te.Id)
-							return fmt.Errorf("timeline event for test case %s has field-name toolOutcome but no ToolOutcomeChange data", stc.Id)
-						}
-						teToInsert.ToolOutcomeChange = &dao.ToolOutcomeChangeEventInput{
-							OutcomeId: te.ToolOutcomeChange.OutcomeId,
-							ToolId:    toolIdByKey[idToolsMap[strconv.Itoa(te.ToolOutcomeChange.DefenseToolId)].Key()],
-						}
-					default:
-						slog.WarnContext(ctx, "unrecognized field change field name, skipping (forwards compat)", "assessment-name", assessmentName, "field-name", te.FieldName)
+					} else {
+						slog.WarnContext(ctx, "unrecognized timeline event type, skipping (forwards compat)", "assessment-name", assessmentName, "event-type", te.Type)
 					}
-				} else {
-					slog.WarnContext(ctx, "unrecognized timeline event type, skipping (forwards compat)", "assessment-name", assessmentName, "event-type", te.Type)
+					slog.DebugContext(ctx, "Prepared timeline event",
+						"assessment-name", assessmentName,
+						"campaign_name", c.Name,
+						"source-test-case-id", stc.Id,
+						"test-case-id", teToInsert.TestCaseId,
+						"event-type", te.Type,
+						"event", teToInsert)
+					timelineEventInsert.Events = append(timelineEventInsert.Events, *teToInsert)
 				}
-				slog.DebugContext(ctx, "Prepared timeline event",
-					"assessment-name", assessmentName,
-					"campaign_name", c.Name,
-					"source-test-case-id", stc.Id,
-					"test-case-id", teToInsert.TestCaseId,
-					"event-type", te.Type,
-					"event", teToInsert)
-				timelineEventInsert.Events = append(timelineEventInsert.Events, *teToInsert)
 			}
-		}
-		respTimelineResponse, err := dao.CreateTimelineEvents(ctx, client, *timelineEventInsert)
-		if err != nil {
-			if gqlObject, ok := gqlErrParse(err); ok {
-				slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+			respTimelineResponse, err := dao.CreateTimelineEvents(ctx, client, *timelineEventInsert)
+			if err != nil {
+				if gqlObject, ok := gqlErrParse(err); ok {
+					slog.ErrorContext(ctx, "detailed error", "error", gqlObject)
+				}
+				return fmt.Errorf("could not write timeline events for %s, campaign: %s; check vectr version: %w", assessmentName, c.Name, err)
 			}
-			return fmt.Errorf("could not write timeline events for %s, campaign: %s; check vectr version: %w", assessmentName, c.Name, err)
-		}
-		// this is a way to check if errors happened as well
-		if respTimelineResponse.TimelineEvent.Create.Summary.Failed > 0 {
-			for _, errmsg := range respTimelineResponse.TimelineEvent.Create.Items {
-				if len(errmsg.Errors) > 0 {
-					for _, te := range timelineEventInsert.Events {
-						if strings.EqualFold(errmsg.ClientId, te.ClientId) {
-							slog.ErrorContext(ctx, "failed to create timeline event",
-								"assessment-name", assessmentName,
-								"campaign_name", c.Name,
-								"client-id", te.ClientId,
-								"test-case-id", te.TestCaseId,
-								"event", te,
-								"errors", errmsg.Errors)
-							break
-						}
+			// this is a way to check if errors happened as well
+			if respTimelineResponse.TimelineEvent.Create.Summary.Failed > 0 {
+				for _, errmsg := range respTimelineResponse.TimelineEvent.Create.Items {
+					if len(errmsg.Errors) > 0 {
+						for _, te := range timelineEventInsert.Events {
+							if strings.EqualFold(errmsg.ClientId, te.ClientId) {
+								slog.ErrorContext(ctx, "failed to create timeline event",
+									"assessment-name", assessmentName,
+									"campaign_name", c.Name,
+									"client-id", te.ClientId,
+									"test-case-id", te.TestCaseId,
+									"event", te,
+									"errors", errmsg.Errors)
+								break
+							}
 
+						}
 					}
 				}
+				return fmt.Errorf("could not write timeline events for %s, campaign: %s; %d", assessmentName, c.Name, respTimelineResponse.TimelineEvent.Create.Summary.Failed)
 			}
-			return fmt.Errorf("could not write timeline events for %s, campaign: %s; %d", assessmentName, c.Name, respTimelineResponse.TimelineEvent.Create.Summary.Failed)
 		}
 	}
 	slog.InfoContext(ctx, "Test cases created", "assessment-name", assessmentName, "test-case-count", testCaseCount)
