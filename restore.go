@@ -342,6 +342,11 @@ func reconcileDefenseTools(ctx context.Context, client graphql.Client, db string
 
 	result := make(map[string]string, len(toolsToReconcile))
 	for key, ref := range toolsToReconcile {
+		if len(ref.Layers) == 0 {
+			slog.WarnContext(ctx, "defense tool has no defense layers; assigning placeholder layer so it can still be created -- review and reassign the correct layer(s)", "db", db, "tool-name", ref.Name, "placeholder-layer", PLACEHOLDER_DEFENSE_LAYER_NAME)
+			ref.Layers = []string{PLACEHOLDER_DEFENSE_LAYER_NAME}
+		}
+
 		product, err := resolveOrCreateDefenseToolProduct(ctx, client, ref.Product, productsByRef, productsByName, libraryLayersByName)
 		if err != nil {
 			return nil, err
@@ -603,7 +608,13 @@ func resolveOrCreateDefenseToolProduct(ctx context.Context, client graphql.Clien
 		}
 	}
 
-	layerIds, err := resolveOrCreateLibraryDefenseLayerIds(ctx, client, ref.Layers, libraryLayersByName)
+	layers := ref.Layers
+	if len(layers) == 0 {
+		slog.WarnContext(ctx, "defense tool product has no defense layers; assigning placeholder layer so it can still be created -- review and reassign the correct layer(s)", "product-name", ref.Name, "source-ref", ref.Ref, "placeholder-layer", PLACEHOLDER_DEFENSE_LAYER_NAME)
+		layers = []DefenseLayer{{Name: PLACEHOLDER_DEFENSE_LAYER_NAME}}
+	}
+
+	layerIds, err := resolveOrCreateLibraryDefenseLayerIds(ctx, client, layers, libraryLayersByName)
 	if err != nil {
 		return dao.GetAllDefenseToolProductsDefenseToolProductsDefenseToolProductsConnectionNodesDefenseToolProduct{}, fmt.Errorf("could not resolve library defense layers for product %q (source ref %q): %w", ref.Name, ref.Ref, err)
 	}

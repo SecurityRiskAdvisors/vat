@@ -397,6 +397,11 @@ func TestReconcileDefenseTools_NoMatch(t *testing.T) {
 		"FindVendor": json.RawMessage(`{
 			"libraryVendors": {"nodes": [{"id": "target-vendor-1", "name": "CrowdStrike"}]}
 		}`),
+		"CreateLibraryDefenseLayer": json.RawMessage(`{
+			"defenseLayer": {"createLibrary": {"defenseLayers": [
+				{"id": "target-library-layer-placeholder", "name": "NEEDS REVIEW - NO LAYER ASSIGNED"}
+			]}}
+		}`),
 		"CreateDefenseToolProduct": json.RawMessage(`{
 			"defenseToolProduct": {"create": {"defenseToolProducts": [
 				{"id": "target-product-2", "name": "Falcon NGAV", "ref": "crowdstrike-falcon-ngav"}
@@ -444,6 +449,150 @@ func TestReconcileDefenseTools_NoMatch(t *testing.T) {
 	}
 	if got := vars.Input.DefenseToolProducts[0].VendorId; got == nil || *got != "target-vendor-1" {
 		t.Errorf("CreateDefenseToolProduct vendorId = %v, want %q", got, "target-vendor-1")
+	}
+	if got := vars.Input.DefenseToolProducts[0].DefenseLayerIds; !slices.Equal(got, []string{"target-library-layer-placeholder"}) {
+		t.Errorf("CreateDefenseToolProduct defenseLayerIds = %v, want the placeholder layer %v (ref.Product had no layers)", got, []string{"target-library-layer-placeholder"})
+	}
+}
+
+// TestReconcileDefenseTools_ToolWithNoLayersGetsPlaceholder verifies that a
+// new tool whose ref carries zero defense layers -- the state a prior VECTR
+// migration could leave a tool in, even though VECTR's own create/update API
+// rejects an empty defenseLayerIds list -- is still created, with
+// PLACEHOLDER_DEFENSE_LAYER_NAME resolved (cloned from a library layer) and
+// attached in place of the missing data, rather than failing the restore.
+func TestReconcileDefenseTools_ToolWithNoLayersGetsPlaceholder(t *testing.T) {
+	ref := DefenseToolRef{
+		Name:   "Falcon Sensor",
+		Active: true,
+		Product: DefenseToolProductRef{
+			Ref:  "crowdstrike-falcon-ngav",
+			Name: "Falcon NGAV",
+		},
+	}
+
+	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
+		"GetAllDefenseTools":           json.RawMessage(existingToolsResponse),
+		"GetAllDefenseToolProducts":    json.RawMessage(emptyProductsResponse),
+		"GetAllDefensiveLayers":        json.RawMessage(emptyLayersResponse),
+		"GetAllLibraryDefensiveLayers": json.RawMessage(emptyLibraryLayersResponse),
+		"CreateLibraryDefenseLayer": json.RawMessage(`{
+			"defenseLayer": {"createLibrary": {"defenseLayers": [
+				{"id": "target-library-layer-placeholder", "name": "NEEDS REVIEW - NO LAYER ASSIGNED"}
+			]}}
+		}`),
+		"CloneDefenseLayer": json.RawMessage(`{
+			"defenseLayer": {"clone": {"defenseLayers": [
+				{"id": "target-layer-placeholder", "name": "NEEDS REVIEW - NO LAYER ASSIGNED"}
+			]}}
+		}`),
+		"CreateDefenseToolProduct": json.RawMessage(`{
+			"defenseToolProduct": {"create": {"defenseToolProducts": [
+				{"id": "target-product-2", "name": "Falcon NGAV", "ref": "crowdstrike-falcon-ngav"}
+			]}}
+		}`),
+		"CreateDefenseTool": json.RawMessage(`{
+			"defenseTool": {"create": {"defenseTools": [{
+				"id": "target-tool-2",
+				"name": "Falcon Sensor",
+				"active": true,
+				"defenseToolProduct": {"id": "target-product-2", "ref": "crowdstrike-falcon-ngav"},
+				"defensiveLayers": [{"id": "target-layer-placeholder", "name": "NEEDS REVIEW - NO LAYER ASSIGNED"}]
+			}]}}
+		}`),
+	}}
+
+	result, err := reconcileDefenseTools(context.Background(), client, "test-db", map[string]DefenseToolRef{
+		ref.Key(): ref,
+	})
+	if err != nil {
+		t.Fatalf("reconcileDefenseTools returned an error: %v", err)
+	}
+	if got := result[ref.Key()]; got != "target-tool-2" {
+		t.Errorf("resolved id = %q, want %q", got, "target-tool-2")
+	}
+	if !client.called("CloneDefenseLayer") {
+		t.Error("expected the placeholder defense layer to be cloned into the db")
+	}
+
+	var vars struct {
+		Input dao.CreateDefenseToolInput `json:"input"`
+	}
+	if err := json.Unmarshal(client.variables["CreateDefenseTool"], &vars); err != nil {
+		t.Fatalf("could not decode CreateDefenseTool variables: %v", err)
+	}
+	if len(vars.Input.CreateDefenseToolData) != 1 {
+		t.Fatalf("expected exactly one defense tool input, got %d", len(vars.Input.CreateDefenseToolData))
+	}
+	if got := vars.Input.CreateDefenseToolData[0].DefenseLayerIds; !slices.Equal(got, []string{"target-layer-placeholder"}) {
+		t.Errorf("CreateDefenseTool defenseLayerIds = %v, want the placeholder layer %v (ref had no layers)", got, []string{"target-layer-placeholder"})
+	}
+}
+
+// TestReconcileDefenseTools_PlaceholderLayerAlreadyExistsIsReused verifies
+// that when the placeholder db-scoped layer already exists on the target
+// (e.g. a prior restore already created it for another layer-less tool), a
+// second layer-less tool resolves to that same layer instead of cloning a
+// duplicate.
+func TestReconcileDefenseTools_PlaceholderLayerAlreadyExistsIsReused(t *testing.T) {
+	ref := DefenseToolRef{
+		Name:   "Falcon Sensor",
+		Active: true,
+		Product: DefenseToolProductRef{
+			Ref:  "crowdstrike-falcon-ngav",
+			Name: "Falcon NGAV",
+		},
+	}
+
+	client := &scriptedGraphQLClient{responses: map[string]json.RawMessage{
+		"GetAllDefenseTools":        json.RawMessage(existingToolsResponse),
+		"GetAllDefenseToolProducts": json.RawMessage(emptyProductsResponse),
+		"GetAllDefensiveLayers": json.RawMessage(`{"defensivelayers": {"nodes": [
+			{"id": "target-layer-placeholder", "name": "NEEDS REVIEW - NO LAYER ASSIGNED"}
+		]}}`),
+		"GetAllLibraryDefensiveLayers": json.RawMessage(`{"libraryDefensivelayers": {"nodes": [
+			{"id": "target-library-layer-placeholder", "name": "NEEDS REVIEW - NO LAYER ASSIGNED"}
+		]}}`),
+		"CreateDefenseToolProduct": json.RawMessage(`{
+			"defenseToolProduct": {"create": {"defenseToolProducts": [
+				{"id": "target-product-2", "name": "Falcon NGAV", "ref": "crowdstrike-falcon-ngav"}
+			]}}
+		}`),
+		"CreateDefenseTool": json.RawMessage(`{
+			"defenseTool": {"create": {"defenseTools": [{
+				"id": "target-tool-2",
+				"name": "Falcon Sensor",
+				"active": true,
+				"defenseToolProduct": {"id": "target-product-2", "ref": "crowdstrike-falcon-ngav"},
+				"defensiveLayers": [{"id": "target-layer-placeholder", "name": "NEEDS REVIEW - NO LAYER ASSIGNED"}]
+			}]}}
+		}`),
+	}}
+
+	result, err := reconcileDefenseTools(context.Background(), client, "test-db", map[string]DefenseToolRef{
+		ref.Key(): ref,
+	})
+	if err != nil {
+		t.Fatalf("reconcileDefenseTools returned an error: %v", err)
+	}
+	if got := result[ref.Key()]; got != "target-tool-2" {
+		t.Errorf("resolved id = %q, want %q", got, "target-tool-2")
+	}
+	if client.called("CreateLibraryDefenseLayer") || client.called("CloneDefenseLayer") {
+		t.Errorf("expected the already-existing placeholder layer to be reused, not recreated, calls: %v", client.calls)
+	}
+
+	var vars struct {
+		Input dao.CreateDefenseToolInput `json:"input"`
+	}
+	if err := json.Unmarshal(client.variables["CreateDefenseTool"], &vars); err != nil {
+		t.Fatalf("could not decode CreateDefenseTool variables: %v", err)
+	}
+	if len(vars.Input.CreateDefenseToolData) != 1 {
+		t.Fatalf("expected exactly one defense tool input, got %d", len(vars.Input.CreateDefenseToolData))
+	}
+	if got := vars.Input.CreateDefenseToolData[0].DefenseLayerIds; !slices.Equal(got, []string{"target-layer-placeholder"}) {
+		t.Errorf("CreateDefenseTool defenseLayerIds = %v, want the existing placeholder layer %v", got, []string{"target-layer-placeholder"})
 	}
 }
 
