@@ -97,6 +97,7 @@ func Execute() {
 	RootCmd.AddCommand(restoreCmd)  // From restorer.go
 	RootCmd.AddCommand(versionCmd)  // From version.go
 	RootCmd.AddCommand(transferCmd) // From transfer.go
+	RootCmd.AddCommand(cloneCmd)    // From cloner.go
 	RootCmd.AddCommand(licenseCmd)  // From license.go
 	RootCmd.AddCommand(dumpCmd)     // From dumper.go
 	RootCmd.AddCommand(diagCmd)     // From diag.go
