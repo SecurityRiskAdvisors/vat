@@ -34,6 +34,10 @@ This repository provides a CLI tool for saving, restoring, dumping, and transfer
       - [Minimal Example](#minimal-example-3)
       - [Required Options](#required-options-3)
       - [Optional Options](#optional-options-3)
+    - [Clone an Assessment](#clone-an-assessment)
+      - [Minimal Example](#minimal-example-4)
+      - [Required Options](#required-options-4)
+      - [Optional Options](#optional-options-4)
     - [Restoring or Transferring a Single Campaign](#restoring-or-transferring-a-single-campaign)
       - [Example using `restore`](#example-using-restore)
     - [Recovering from a Duplicate Assessment ID](#recovering-from-a-duplicate-assessment-id)
@@ -41,9 +45,9 @@ This repository provides a CLI tool for saving, restoring, dumping, and transfer
     - [Defense Tool Reconciliation](#defense-tool-reconciliation)
     - [Force Environment Only Import](#force-environment-only-import)
     - [Diagnostic Command](#diagnostic-command)
-      - [Minimal Example](#minimal-example-4)
-      - [Required Options](#required-options-4)
-      - [Optional Options](#optional-options-4)
+      - [Minimal Example](#minimal-example-5)
+      - [Required Options](#required-options-5)
+      - [Optional Options](#optional-options-5)
     - [Debug Mode](#debug-mode)
   - [Working with Encrypted Assessment Files](#working-with-encrypted-assessment-files)
     - [Extracting JSON from Encrypted Files](#extracting-json-from-encrypted-files)
@@ -250,9 +254,43 @@ Transfer an assessment from one VECTR instance directly to another:
 - `--target-assessment-name`: Overrides the name of the assessment in the target instance. Required when using `--source-campaign-name`.
 - `--source-campaign-name`: Name of a specific campaign to transfer. If set, `--target-assessment-name` must be an existing assessment.
 
+If the source and the target are the same VECTR instance and you want a *copy* of the assessment, use [`clone`](#clone-an-assessment) instead — it takes a single set of connection options, always requires `--target-assessment-name`, and always mints a new `globalId`. Keep using `transfer` if you need to preserve the original `globalId` (for example, the same-instance, cross-environment re-run described in [Recovering from a Duplicate Assessment ID](#recovering-from-a-duplicate-assessment-id)).
+
+### Clone an Assessment
+
+Clone an assessment within a single VECTR instance, i.e. make a copy of it under a new name:
+
+#### Minimal Example
+```bash
+./vat clone --hostname <vectr-hostname> --vectr-creds-file <path-to-vectr-creds-file> --env <environment-name> --assessment-name <assessment-name> --target-assessment-name <new-assessment-name>
+```
+
+A clone is by definition a *copy*, so `vat` always mints a new `globalId` for the cloned assessment. This is inherent to the command and there is no flag to turn it off — if you want to preserve the original `globalId`, you are not cloning: use [`transfer`](#transfer-assessment-data), which exposes `--reset-id` as an opt-in.
+
+#### Required Options
+- `--hostname`: Hostname of the VECTR instance.
+- `--vectr-creds-file`: Path to the VECTR credentials file.
+- `--env`: Environment name to clone the assessment from.
+- `--assessment-name`: Name of the assessment to clone.
+- `--target-assessment-name`: Name to give the cloned assessment.
+
+#### Optional Options
+- `--target-env`: Environment name to clone the assessment into. Defaults to `--env`, which clones within the same environment.
+- `--source-campaign-name`: Name of a specific campaign to clone. If set, `--target-assessment-name` must be an existing assessment.
+- `--override-template-assessment`: Overrides the template assessment set in the serialized data and uses the saved template data (lower fidelity).
+- `--delete-on-failure`: In the case of a failure, delete the created assessment from VECTR. (Note: this does not affect single campaign clones)
+- `--force-env-only`: Ignore any templates associated with test cases and import them as environment-only test cases. This breaks the link to the library template. (DANGEROUS)
+- `-k`: Allow insecure connections (e.g., ignore TLS certificate errors).
+- `--client-cert-file`: Path to the client certificate file for mTLS.
+- `--client-key-file`: Path to the client key file for mTLS.
+- `--ca-cert`: Path to a CA certificate file (can be used multiple times to add multiple CAs).
+- `--ignore-version-check`: Proceed with a warning instead of aborting when the live VECTR version is outside the [supported range](#supported-vectr-versions).
+
+Cloning a whole assessment onto itself is not possible: if the effective target environment is the same as the source environment, `--target-assessment-name` must differ from `--assessment-name`. `vat` rejects this before connecting to VECTR. This restriction does not apply when `--source-campaign-name` is set — there `--target-assessment-name` names an *existing* assessment to receive the campaign copy, so naming the source assessment is the way to duplicate a campaign inside its own assessment.
+
 ### Restoring or Transferring a Single Campaign
 
-The `restore` and `transfer` commands support moving a single campaign from a source assessment into an existing target assessment. This is useful for merging campaigns or moving specific parts of an assessment without transferring the entire thing.
+The `restore`, `transfer`, and `clone` commands support moving a single campaign from a source assessment into an existing target assessment. This is useful for merging campaigns or moving specific parts of an assessment without transferring the entire thing.
 
 To do this, use the `--source-campaign-name` flag to specify which campaign to move. When using this flag, you must also provide `--target-assessment-name` with the name of an *existing* assessment on the target VECTR instance. The campaign will then be restored or transferred into that assessment.
 
@@ -294,7 +332,7 @@ If a command aborts with an error like `VECTR version "..." is outside the range
 ./vat restore --hostname <target-hostname> --env <target-env> --vectr-creds-file <path-to-vectr-creds-file> --input-file assessment.vat --ignore-version-check ...
 ```
 
-The same flag applies to `save`, `dump`, and `transfer`.
+The same flag applies to `save`, `dump`, `transfer`, and `clone`.
 
 ### Defense Tool Reconciliation
 
@@ -408,6 +446,7 @@ make all test
   - `restorer.go`: Implements the `restore` command for restoring assessments.
   - `dumper.go`: Implements the `dump` command for dumping assessments.
   - `transfer.go`: Implements the `transfer` command for transferring assessments between instances.
+  - `cloner.go`: Implements the `clone` command for cloning assessments within a single instance.
   - `cmd.go`: Root command and CLI setup.
   - `version.go`: Implements the `version` command to display the application version.
   - `license.go`: Implements the `license` command to display the application license.
