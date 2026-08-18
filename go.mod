@@ -2,7 +2,7 @@ module sra/vat
 
 go 1.25.5
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require (
 	filippo.io/age v1.3.1
